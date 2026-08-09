@@ -67,3 +67,43 @@ API까지 요구한다고 읽으면 DoD와 정면으로 모순되고, 함정 ①
 완전히 구현할 수 있다"고 확인했다.
 **반영**: `lib/keyword/kiwi.ts` · `lib/keyword/index.ts`. Task 020이 `blockList`·`typos` 등 다른 옵셔널 인자를 쓰게
 되면 `safeTokenize`와 같은 삼항 분기 패턴의 새 안전 래퍼를 `kiwi.ts`에 추가하고 **그 함수만** 내보낸다.
+
+### D-003 · `fetchFeed`는 실패를 예외가 아니라 `CrawlFailure` 값으로 반환한다
+
+- 상태: 유효
+- 결정: 2일차 · 화면(지적) · 크롤 파이프라인(구현)
+- 영향 Task: Task 010A · Task 010B · Task 013B
+
+**배경**: `lib/crawler/rss.ts`의 `fetchFeed`가 처음에는 피드 전체 실패를 `Error` reject로 처리했다. 구현 측
+근거는 "피드 자체를 못 읽는 것은 개별 기사 격리 대상이 아니라 이 호출 전체의 실패"였다.
+**결정**: 실패를 값으로 반환한다. `FeedFetchResult = FeedFetchSuccess | CrawlFailure`이며, 실패 쪽은
+**`lib/crawler/types.ts`의 `CrawlFailure`를 그대로 재사용한다** — 구조만 비슷한 새 타입을 만들지 않는다.
+내부의 `fetchFeedBytes`·`parseFeedItems`는 계속 던지되, 공개 함수 `fetchFeed`가 경계에서 값으로 변환한다.
+**근거**: 같은 계층의 `fetchHtml`이 이미 반대 패턴을 확립해 두었다(`lib/crawler/fetch-html.ts:50-56` —
+동일한 "단일 URL을 열었는데 통째로 실패" 시나리오에서 `{ ok: false, url, error, elapsedMs }`를 반환).
+`fetchFeed`만 예외로 이탈하면 Task 013B 오케스트레이터가 **RSS 분기는 `try/catch`로, HTML 분기는 `.ok`
+체크로** 서로 다른 관용구를 쓰게 되고, 나중에 한쪽에만 규칙이 반영되는 사고가 난다. `CONVENTIONS.md`
+§7("개별 실패는 예외가 아니라 값으로 격리한다")의 취지도 언론사 1곳의 피드 실패에 그대로 적용된다.
+실패 타입을 새로 만들지 않은 것은 013B가 RSS 실패와 HTML 실패를 **같은 핸들러 하나로** 처리할 수 있게
+하기 위해서다.
+**반영**: `lib/crawler/rss.ts` · `lib/crawler/rss.test.ts`(실패 케이스 4건 유지 + "항상 값을 반환한다" 1건
+추가) · `lib/crawler/index.ts` 재수출.
+
+### D-004 · 기사 txt의 원자적 쓰기는 `atomicWriteFile`을 재사용한다
+
+- 상태: 유효
+- 결정: 2일차 · 크롤 파이프라인(권고) · 팀장(확정)
+- 영향 Task: Task 005 · Task 007
+
+**배경**: `writeJson`은 임시 파일 → `fs.rename`으로 크래시 안전성을 보장하지만 `JSON.stringify`가 함수 안에
+박혀 있어 JSON 전용이었다. Task 007의 `article-file.ts`는 기사 txt(메타 라인 + 빈 줄 + 본문)를 같은 수준으로
+저장해야 하는데 대응물이 없었다.
+**결정**: temp 생성 → `writeFile` → `rename` → 실패 시 정리라는 핵심부를 `atomicWriteFile(filePath, content:
+string)`로 분리하고, `writeJson`은 그것을 부르는 얇은 래퍼로 둔다. Task 007은 txt 문자열을 이 헬퍼에 그대로
+넘긴다.
+**근거**: 크래시 안전성 로직은 JSON이든 txt든 완전히 동일하다. 007이 처음부터 다시 짜면 같은 패턴이 두 곳에
+중복되고 한쪽만 고쳐지는 사고가 난다. **기각한 대안**: 007이 `article-file.ts` 안에 독립적인 원자적 텍스트
+쓰기를 새로 만드는 것 — Task 005 스코프 밖이라 저장소 계층이 떠안을 의무는 없다는 반론이 있었으나, 지금 한 겹
+쪼개는 비용이 나중에 두 구현을 맞춰 가는 비용보다 싸다고 판단했다.
+**반영**: `lib/storage/json-store.ts`(`writeJson`의 외부 시그니처·동작은 불변인 순수 리팩터링) ·
+`lib/storage/index.ts` 재수출. 리뷰어가 메타 라인 + 본문 형태의 실제 텍스트로 왕복을 확인했다.

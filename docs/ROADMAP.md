@@ -40,13 +40,13 @@
 | Phase | 범위 | Task | 완료 | 상태 |
 |-------|------|------|------|------|
 | **Phase 0** | 완료된 기반 (프로젝트 골격·앱 셸·Kiwi 검증) | 3 (001–003) | 3 | ✅ 완료 |
-| **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 1 | 🟡 진행 중 |
+| **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 2 | 🟡 진행 중 |
 | **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 0 | ⬜ 대기 |
 | **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 0 | ⬜ 대기 |
 | **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 0 | ⬜ 대기 |
 | **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 1 | 🟡 진행 중 |
 | **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 0 | ⬜ 대기 |
-| **합계** | | **25** | **5** | **20%** |
+| **합계** | | **25** | **6** | **24%** |
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -162,7 +162,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 005 · 파일 저장소 공통 기반 (경로 · 원자적 쓰기 · 시드)
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F003` `F007` `F008` 공통 &nbsp;|&nbsp; 선행: Task 004
+- [x] 완료 (2일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F003` `F007` `F008` 공통 &nbsp;|&nbsp; 선행: Task 004
+- **결과물**: `lib/storage/{paths,json-store,index}.ts`, `lib/storage/paths.test.ts`(경로 순회 차단 17건 포함 23건)
+- **남긴 한계**: 계획에 없던 두 가지를 교차검증 지적으로 추가했다 — `runsRootDir()`(Task 007의 `listRuns()`가 `data/runs/`를 `paths.ts` 밖에서 조립하지 않게)와 `atomicWriteFile(path, content)`(기사 txt도 같은 크래시 안전성을 재사용하도록 temp→rename 핵심부를 분리). 크래시 시 남는 orphan `.tmp` 정리는 부팅 시점 루틴이 필요해 보류했다(`docs/ISSUES.md` I-002).
 - **참조**: `docs/PRD.md` §데이터 모델 "현재 저장 위치" 컬럼, `.gitignore`(`/data` 제외)
 - **생성/수정 파일**
   - `lib/storage/paths.ts` — `DATA_ROOT`, `pressSourcesPath()`, `stopwordsPath()`, `runDir(runId)`, `runMetaPath(runId)`, `articlesDir(runId)`, `articlePath(runId, articleId)`, `keywordsPath(runId)`
@@ -313,6 +315,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 ### Task 010 · RSS 피드 파서 + 소스 테스트 API + 폼 연동
 
 - [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 009
+- **진행 메모**: 010A(RSS 피드 파서 `lib/crawler/rss.ts`) 완료(2일차). 조각 010B(소스 테스트 API·폼 연동)가 남아 이 블록은 체크하지 않는다. `fetchFeed`는 실패를 예외가 아니라 `CrawlFailure` 값으로 돌려준다(`docs/DECISIONS.md` D-003).
 - **참조**: `docs/screens/04-press-manage.md` §설계 결정 근거 3, §상태별 화면 ③-C(성공/실패 결과 Alert), `docs/PRD.md` §기술 스택 "RSS 경로에 대한 두 가지 전제"
 - **의존성 주의**: 여기서 만드는 `lib/crawler/rss.ts`를 **Task 013의 크롤 오케스트레이터가 그대로 재사용**한다. 따라서 이 Task는 잘라낼 수 있는 부가 기능이 아니라 **Phase 3의 선행 조건**이다(결정 필요 사항 Q5 참고 — 잘라낼 수 있는 것은 테스트 UI뿐이다).
 - **생성/수정 파일**
@@ -405,6 +408,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 ### Task 013 · 언론사 단위 크롤 오케스트레이터
 
 - [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F001` `F003` &nbsp;|&nbsp; 선행: Task 007, Task 008, **Task 010**(RSS 파서)
+- **진행 메모**: 013A(기사 본문 수집·정제 `lib/crawler/article-parser.ts`) 완료(2일차). 조각 013B(언론사 방식 분기 오케스트레이터)가 남아 이 블록은 체크하지 않는다. DoD 8개 중 세 경로 수집·`contentSource` 기록·저장 txt 개행 확인은 013B로 이월했다.
 - **참조**: `docs/PRD.md` §F001·§기술 스택, `lib/crawler/{fetch-html,parse,run,rss}.ts`, `docs/screens/01-crawl-run.md` §크롤링 옵션 노출 범위 결정
 - **생성/수정 파일**
   - `lib/crawler/press-crawler.ts` (신규) — `crawlPress(press, options, hooks)` : `press.sourceType`으로 **기사 URL 수집 경로만 분기**하고 이후는 공통

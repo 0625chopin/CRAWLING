@@ -1,0 +1,60 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# --- 프로젝트 전용 ---
+
+# .env* 로 전부 무시되므로 예시 파일만 예외 처리한다
+!.env.example
+
+# Claude Code 로컬 설정 (사용자별 — 팀 공유 대상 아님)
+.claude/settings.local.json
+
+# shrimp task manager 로컬 데이터
+/shrimp_data
+
+# 크롤링 산출물
+/data
+
+# playwright 로컬 산출물
+/test-results
+/playwright-report
+/.playwright-mcp

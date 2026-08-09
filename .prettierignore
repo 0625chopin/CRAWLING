@@ -1,0 +1,18 @@
+# 빌드 산출물 / 의존성
+.next
+out
+build
+node_modules
+package-lock.json
+
+# shadcn CLI 생성물 — 원본 그대로 유지해야 재설치/업데이트 diff가 깨끗하다
+components/ui
+
+# 정적 자산
+public
+
+# 프로젝트 외부 데이터 — 애플리케이션 소스가 아니므로 포맷 대상이 아니다
+.claude
+shrimp_data
+docs
+data

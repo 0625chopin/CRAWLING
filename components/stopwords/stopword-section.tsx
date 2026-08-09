@@ -15,6 +15,14 @@ export interface StopwordSectionProps {
   title: string
   description?: string
   items: Stopword[]
+  /**
+   * 헤딩에 표시할 개수. 생략하면 items.length를 쓴다. 검색 필터링 중에는 화면에 그리는
+   * items(필터된 결과)와 헤딩 개수를 분리해야 한다 — 검색 결과가 0건이어도 "기본 제공
+   * 불용어 (0)"이 아니라 원래 총 개수를 유지해야 "검색어와 일치하는 게 없다"는 뜻이
+   * 정확히 전달된다(docs/screens/05-stopword-manage.md §상태별 화면 ⑥ "섹션 구조(제목 +
+   * 개수)는 유지"). 검색을 구현하는 012B가 원본 총 개수를 명시적으로 넘긴다.
+   */
+  totalCount?: number
   /** items가 비었을 때 보여줄 안내. 기본 제공 섹션은 항상 프리셋이 있어 생략 가능하다. */
   emptyState?: StopwordSectionEmptyState
   onDeleted: (stopword: Stopword) => void
@@ -30,6 +38,7 @@ export function StopwordSection({
   title,
   description,
   items,
+  totalCount,
   emptyState,
   onDeleted,
 }: StopwordSectionProps) {
@@ -37,7 +46,7 @@ export function StopwordSection({
     <section aria-labelledby={headingId} className="space-y-3">
       <div>
         <h2 id={headingId} className="text-sm font-medium">
-          {title} ({items.length})
+          {title} ({totalCount ?? items.length})
         </h2>
         {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>

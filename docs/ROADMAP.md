@@ -41,12 +41,12 @@
 |-------|------|------|------|------|
 | **Phase 0** | 완료된 기반 (프로젝트 골격·앱 셸·Kiwi 검증) | 3 (001–003) | 3 | ✅ 완료 |
 | **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 4 | ✅ 완료 |
-| **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 2 | 🟡 진행 중 |
-| **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 0 | ⬜ 대기 |
+| **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 4 | 🟡 진행 중 |
+| **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 1 | 🟡 진행 중 |
 | **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 0 | ⬜ 대기 |
 | **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 2 | 🟡 진행 중 |
 | **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 0 | ⬜ 대기 |
-| **합계** | | **25** | **11** | **44%** |
+| **합계** | | **25** | **14** | **56%** |
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -284,8 +284,10 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 009 · 언론사 관리 화면
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 008
-- **진행 메모**: 009A(목록 표·카드 리스트·방식 배지 `components/press/{press-table,press-card-list,source-type-badge}.tsx` + `lib/api/press-client.ts`) 완료(5일차). 조각 009B(`app/press/page.tsx`·추가/수정/삭제 다이얼로그)가 남아 이 블록은 체크하지 않는다. **`page.tsx`가 009B 몫이라 `/press`는 아직 `ScreenPlaceholder`이고, 009A의 DoD는 009B 완료 회차에 함께 태운다**(D-006).
+- [x] 완료 (6일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 008
+- **결과물**: `app/press/page.tsx`, `components/press/{press-table,press-card-list,source-type-badge,press-form-dialog,delete-press-dialog}.tsx`, `lib/api/press-client.ts`
+- **남긴 한계**: 「활성 토글을 끄면 홈 체크박스 목록에서 사라진다」는 홈이 실제 화면이 돼야 확인된다 — **Task 016B 완료 회차로 이월**. 조각 경계는 D-011대로 009B가 `page.tsx`를 소유했다.
+- **진행 메모(5일차)**: 009A(목록 표·카드 리스트·방식 배지 `components/press/{press-table,press-card-list,source-type-badge}.tsx` + `lib/api/press-client.ts`) 완료(5일차). 조각 009B(`app/press/page.tsx`·추가/수정/삭제 다이얼로그)가 남아 이 블록은 체크하지 않는다. **`page.tsx`가 009B 몫이라 `/press`는 아직 `ScreenPlaceholder`이고, 009A의 DoD는 009B 완료 회차에 함께 태운다**(D-006).
 - **참조**: `docs/screens/04-press-manage.md` (전 절 — 특히 "상태별 화면" ①~⑦, "접근성", "마크업 스켈레톤")
 - **생성/수정 파일**
   - `app/press/page.tsx` (수정 — `ScreenPlaceholder` 제거)
@@ -373,8 +375,10 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 012 · 불용어 관리 화면
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F008` &nbsp;|&nbsp; 선행: Task 011
-- **진행 메모**: 012A(`app/stopwords/page.tsx`에서 `ScreenPlaceholder` 제거 + `components/stopwords/{stopword-chip,stopword-section}.tsx` + `lib/api/stopword-client.ts`) 완료(5일차). 조각 012B(추가·일괄·검색 동선)가 남아 이 블록은 체크하지 않는다. `stopword-add-card.tsx`는 D-006대로 정적 뼈대만 두었다.
+- [x] 완료 (6일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F008` &nbsp;|&nbsp; 선행: Task 011
+- **결과물**: `app/stopwords/page.tsx`, `components/stopwords/{stopword-chip,stopword-section,stopword-add-card}.tsx`, `lib/api/stopword-client.ts`
+- **남긴 한계**: 없음. 5일차 교차검증이 짚은 로딩 스켈레톤 편차(설계서 05 §⑦)를 012B 회차에 함께 정리했다.
+- **진행 메모(5일차)**: 012A(`app/stopwords/page.tsx`에서 `ScreenPlaceholder` 제거 + `components/stopwords/{stopword-chip,stopword-section}.tsx` + `lib/api/stopword-client.ts`) 완료(5일차). 조각 012B(추가·일괄·검색 동선)가 남아 이 블록은 체크하지 않는다. `stopword-add-card.tsx`는 D-006대로 정적 뼈대만 두었다.
 - **참조**: `docs/screens/05-stopword-manage.md` (전 절 — "상태별 화면" ①~⑦, "접근성", "마크업 스켈레톤")
 - **생성/수정 파일**
   - `app/stopwords/page.tsx` (수정 — `ScreenPlaceholder` 제거)
@@ -417,8 +421,10 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 013 · 언론사 단위 크롤 오케스트레이터
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F001` `F003` &nbsp;|&nbsp; 선행: Task 007, Task 008, **Task 010**(RSS 파서)
-- **진행 메모**: 013A(기사 본문 수집·정제 `lib/crawler/article-parser.ts`) 완료(2일차). 조각 013B(언론사 방식 분기 오케스트레이터)가 남아 이 블록은 체크하지 않는다. DoD 8개 중 세 경로 수집·`contentSource` 기록·저장 txt 개행 확인은 013B로 이월했다.
+- [x] 완료 (6일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F001` `F003` &nbsp;|&nbsp; 선행: Task 007, Task 008, **Task 010**(RSS 파서)
+- **결과물**: `lib/crawler/article-parser.ts`(013A · 2일차), `lib/crawler/press-crawler.ts`(013B · 6일차), `lib/crawler/press-crawler.test.ts`
+- **남긴 한계**: DoD ⑧(저장된 txt 본문에 개행 2개 이상)은 **저장 경로가 붙는 Task 014A/015A 회차로 이월**했다 — `press-crawler`는 저장소를 모르므로 파일을 쓰지 않는다. 반환하는 `ArticleDraft.content`에 개행이 보존되는 것은 실데이터로 확인했다(zdnet 9~11개 · inews24 9~13개).
+- **진행 메모(2일차)**: 013A(기사 본문 수집·정제 `lib/crawler/article-parser.ts`) 완료(2일차). 조각 013B(언론사 방식 분기 오케스트레이터)가 남아 이 블록은 체크하지 않는다. DoD 8개 중 세 경로 수집·`contentSource` 기록·저장 txt 개행 확인은 013B로 이월했다.
 - **참조**: `docs/PRD.md` §F001·§기술 스택, `lib/crawler/{fetch-html,parse,run,rss}.ts`, `docs/screens/01-crawl-run.md` §크롤링 옵션 노출 범위 결정
 - **생성/수정 파일**
   - `lib/crawler/press-crawler.ts` (신규) — `crawlPress(press, options, hooks)` : `press.sourceType`으로 **기사 URL 수집 경로만 분기**하고 이후는 공통

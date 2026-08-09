@@ -252,3 +252,62 @@ POS·길이 필터를 다시 구현하지 않는다. `stopwordExcludedCount`는 
 반복하지 않게 한다.
 **반영**: 5일차에 009A는 컴포넌트 3종 + `press-client.ts`만 만들고 `app/press/page.tsx`는 손대지 않았다.
 012A는 `page.tsx`를 만들고 012B의 `stopword-add-card.tsx`를 뼈대로 두었다.
+
+### D-012 · `crawlPress`는 저장소를 모른다 — `runId`를 인자로 받고 `id` 없는 `ArticleDraft`를 반환한다
+
+- 상태: 유효
+- 결정: 6일차 · 크롤 파이프라인(Task 013B)
+- 영향 Task: Task 013B · Task 014A
+
+**배경**: `Article` 스키마는 `id`(실행 전체에서 유일한 4자리 순번)를 요구하는데, 이 모듈은 **언론사 1곳만 보고
+크롤하므로 다른 언론사가 같은 실행에서 몇 건을 만들지 알 수 없어** 전역 순번을 스스로 매길 수 없다.
+**결정**:
+1. `crawlPress(press, runId, options?, hooks?)` — `runId`를 문자열 인자로 받는다. **이 모듈은 `lib/storage/`를
+   import하지 않는다.** 호출부(014A)가 `createRun`으로 만든 값을 전달만 한다.
+2. 반환은 **`ArticleDraft = Omit<Article, 'id'>`**. `id`는 014A가 여러 언론사 결과를 모아 저장 시점에 매긴다.
+3. `PressCrawlResult.failures: CrawlFailure[]`는 **언론사 전체 실패**(피드·목록 페이지 실패·링크 0건 — 이때
+   `failures.length === 1`이고 `articles`는 빈 배열)와 **개별 기사 실패**를 함께 담는다. 호출부가 배열의
+   길이·내용으로 두 경우를 모두 판단할 수 있다.
+**근거**: 저장소나 전역 순번 배정을 이 모듈에 넣으면 "이 모듈은 저장소·HTTP를 모른다"는 경계와 충돌한다.
+`id`를 호출부가 채우는 편이 이 모듈이 저장소를 import하는 것보다 경계가 명확하다.
+**반영**: `lib/crawler/press-crawler.ts`. **Task 014A는 이 계약을 그대로 전제하면 된다** — ① `createRun`의
+`runId`를 넘기고 ② 반환된 `articles`에 전역 순번을 매겨 `saveArticle` ③ 성공·실패 합산으로 `finishRun`.
+
+### D-013 · 언론사 레벨 동시성은 Task 014A가 별도로 제한할지 판단한다
+
+- 상태: 유효(판단 이월)
+- 결정: 6일차 · 크롤 파이프라인(제기)
+- 영향 Task: Task 014A
+
+`crawlPress`는 자기 안에서 `crawlerConfig.concurrency`(기본 2)만큼 동시 페이지를 연다. **014A가 언론사 N곳을
+병렬로 돌리면 실제 동시 페이지 수가 N×2가 된다.** 대상 서버 부담 방지가 이 설정의 목적이므로, 014A가 언론사
+레벨 동시성도 별도로 제한할지 그 Task 착수 시 판단한다. 013B 범위 밖이라 열어 둔다.
+
+### D-014 · 재사용 다이얼로그는 effect로 폼을 다시 채우지 않고 `key` 리마운트로 초기화한다
+
+- 상태: 유효
+- 결정: 6일차 · 화면(Task 009B)
+- 영향 Task: Task 009B · Task 016A · Task 018 계열(같은 "재사용 다이얼로그" 패턴)
+
+**배경**: 009A의 표·카드는 수정/삭제 버튼에서 다이얼로그를 직접 열지 않고 **콜백만 부모에 알린다.** 그래서
+`PressFormDialog`는 `app/press/page.tsx`가 들고 있는 `open`/`press` 상태로 제어된다. 처음에는 "열릴 때마다
+`useEffect`로 폼 필드를 다시 채우는" 방식으로 구현했는데, 이 저장소에 켜져 있는
+**`react-hooks/set-state-in-effect` 규칙이 `npm run lint`를 실패**시켰다(effect 본문에서 여러 `setState`를
+동기 호출하면 cascading renders 경고).
+**결정**: 페이지가 다이얼로그를 열 때마다 증가하는 카운터를 `key`로 넘겨 **컴포넌트를 통째로 리마운트**한다.
+그러면 다이얼로그 내부의 모든 `useState`가 props를 초기값으로 삼는 평범한 형태로 충분해지고, "열릴 때마다
+다시 채우는" effect 자체가 사라진다. **닫힐 때는 `key`를 바꾸지 않으므로** Radix Dialog의 닫힘 애니메이션이
+보존된다.
+**근거**: React 공식 문서(「You Might Not Need an Effect」 §Resetting state with a key)가 권하는 표준 패턴이다.
+**부수 효과가 오히려 이득이다** — 행마다 다이얼로그를 인스턴스화하는 대신 페이지가 **하나만** 렌더링하므로
+`press-name`·`press-feed-url` 같은 `id`가 페이지 안에서 항상 유일하다. 행이 N개면 같은 `id`를 가진 입력이
+DOM에 N개 존재할 뻔한 문제를 피한다.
+**설계서와의 관계**: `docs/screens/04-press-manage.md`의 마크업 스켈레톤은 행마다 트리거를 두는 형태지만,
+스켈레톤은 "구현은 파일 분할 경계 표대로 나눈다"는 전제의 참고 자료이지 리터럴 규격이 아니다. 상태 소유
+구조를 바꾼 것은 설계서 위반이 아니라고 판단했다.
+**반영**: `app/press/page.tsx`(다이얼로그 상태 소유) · `components/press/{press-form-dialog,delete-press-dialog}.tsx`
+(항상 controlled `open`/`onOpenChange`, 개별 트리거 prop 없음).
+
+**같은 규칙에서 나온 데이터 페칭 관용구**: `useCallback`/`useEffectEvent`로 감싼 함수를 이펙트에서 호출해도
+이 규칙에 걸린다. `useEffect(() => { fetchX().then(setState).catch(setState) }, [dep])` 형태로 **완전히
+인라인**해야 통과한다. Task 016A·018A도 데이터 조회가 필요하니 이 형태를 그대로 쓴다.

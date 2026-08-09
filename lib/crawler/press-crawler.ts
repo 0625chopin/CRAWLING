@@ -1,0 +1,296 @@
+import 'server-only'
+
+import pLimit from 'p-limit'
+
+import type { Article } from '@/lib/types/article'
+import type { HtmlPressSource, PressSource, RssPressSource } from '@/lib/types/press'
+
+import { checkArticleContent, extractArticleContent, resolveMaxArticlesPerPress } from './article-parser'
+import { crawlerConfig } from './config'
+import { fetchHtml } from './fetch-html'
+import { extractLinks, loadDocument, selectText } from './parse'
+import { fetchFeed, type FeedItem } from './rss'
+import type { CrawlFailure } from './types'
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * press-crawler가 만드는 기사 초안. `id`는 한 실행(run) 전체에서 유일해야 하는 4자리 순번인데,
+ * 이 모듈은 언론사 1곳만 보고 다른 언론사가 몇 건을 만들지 모르므로 순번을 매길 수 없다.
+ * 저장 시점(014A가 saveArticle을 부를 때)에 순번을 부여한다.
+ */
+export type ArticleDraft = Omit<Article, 'id'>
+
+export interface PressCrawlHooks {
+  /**
+   * 언론사 하나 안에서 기사 1건(성공·실패 모두)이 끝날 때마다 호출된다.
+   * 이 모듈은 저장소·HTTP를 모른다 — 진행 상황을 밖으로 알리는 유일한 통로다.
+   */
+  onArticleDone?: (pressId: string, collected: number, target: number) => void
+}
+
+export interface PressCrawlOptions {
+  /** 언론사당 최대 수집 기사 수. 미지정 시 기본값 20, 상한 100(resolveMaxArticlesPerPress). */
+  maxArticlesPerPress?: number
+}
+
+export interface PressCrawlResult {
+  pressId: string
+  /** 수집에 성공한 기사. */
+  articles: ArticleDraft[]
+  /**
+   * 개별 기사(피드 항목·링크) 수준에서 격리된 실패. 피드·목록 페이지 자체를 열지 못한
+   * 언론사 전체 실패도 이 배열에 담긴 1건으로 표현한다(articles는 빈 배열이 된다).
+   */
+  failures: CrawlFailure[]
+}
+
+type ArticleLink = { url: string; title?: string }
+
+/**
+ * 원문 페이지 하나를 열어 제목·본문을 뽑고 최소 길이를 검사한다.
+ * RSS(contentSelector 있음)·HTML 두 경로가 공유하는 유일한 본문 수집 지점이다 — 여기서 갈라지면
+ * 이후 규칙 변경(정제 방식·길이 기준)이 한쪽에만 반영되는 사고가 난다.
+ *
+ * ⚠️ 제목은 `selectText`(공백을 한 칸으로 접어도 무방), 본문은 `extractArticleContent`(문단 개행 보존)로
+ * 뽑는다. `selectText`를 본문에 쓰면 개행이 사라지고 txt 저장 후에는 재크롤 말고 복구 수단이 없다.
+ */
+async function collectArticlePage(
+  pressId: string,
+  runId: string,
+  link: ArticleLink,
+  contentSelector: string,
+  titleSelector: string | undefined
+): Promise<{ ok: true; article: ArticleDraft } | { ok: false; failure: CrawlFailure }> {
+  const page = await fetchHtml({ url: link.url })
+  if (!page.ok) {
+    return { ok: false, failure: page }
+  }
+
+  const $ = loadDocument(page.html)
+  // RSS 경로는 titleSelector가 없다(rssFields에 그 필드 자체가 없다) — 피드가 이미 준 제목(link.title)을 쓴다.
+  const title = (titleSelector ? selectText($, titleSelector) : undefined) ?? link.title
+
+  if (!title) {
+    return {
+      ok: false,
+      failure: { ok: false, url: link.url, error: '제목을 찾을 수 없습니다', elapsedMs: page.elapsedMs },
+    }
+  }
+
+  const content = extractArticleContent($, contentSelector)
+  const check = checkArticleContent(content, 'article-page')
+  if (!check.ok) {
+    return {
+      ok: false,
+      failure: { ok: false, url: link.url, error: check.reason, elapsedMs: page.elapsedMs },
+    }
+  }
+
+  return {
+    ok: true,
+    article: {
+      pressId,
+      runId,
+      title,
+      url: link.url,
+      content: check.content,
+      contentSource: 'article-page',
+      crawledAt: new Date().toISOString(),
+    },
+  }
+}
+
+/**
+ * 링크 목록을 동시성 제한 아래에서 본문 수집 단계로 밀어 넣는다. 동시성·지연은
+ * `lib/crawler/config.ts`(화면에 노출하지 않는 값)를 그대로 쓴다 — `lib/crawler/run.ts`의
+ * `runCrawl`과 같은 p-limit 패턴이되, 완료마다 `onArticleDone`을 부르는 점이 다르다.
+ * 개별 작업이 예기치 않게 throw해도(예: 셀렉터 구문 오류) 배치 전체가 무너지지 않도록 값으로 잡는다.
+ */
+async function collectArticlePages(
+  pressId: string,
+  runId: string,
+  links: ArticleLink[],
+  contentSelector: string,
+  titleSelector: string | undefined,
+  hooks: PressCrawlHooks
+): Promise<{ articles: ArticleDraft[]; failures: CrawlFailure[] }> {
+  const limit = pLimit(crawlerConfig.concurrency)
+  const delayMs = crawlerConfig.delayMs
+  const target = links.length
+  let collected = 0
+
+  const results = await Promise.all(
+    links.map((link, index) =>
+      limit(async () => {
+        if (delayMs > 0 && index > 0) {
+          await sleep(delayMs)
+        }
+        try {
+          return await collectArticlePage(pressId, runId, link, contentSelector, titleSelector)
+        } catch (error) {
+          return {
+            ok: false as const,
+            failure: {
+              ok: false as const,
+              url: link.url,
+              error: error instanceof Error ? error.message : String(error),
+              elapsedMs: 0,
+            },
+          }
+        } finally {
+          collected += 1
+          hooks.onArticleDone?.(pressId, collected, target)
+        }
+      })
+    )
+  )
+
+  const articles: ArticleDraft[] = []
+  const failures: CrawlFailure[] = []
+  for (const result of results) {
+    if (result.ok) articles.push(result.article)
+    else failures.push(result.failure)
+  }
+  return { articles, failures }
+}
+
+/**
+ * RSS 요약 경로. `contentSelector`가 없으므로 원문 페이지를 한 번도 열지 않는다(Playwright 0회 기동).
+ * 피드 항목 자체가 제목·요약을 이미 주므로 fetchHtml을 부를 이유가 없다.
+ */
+function collectRssSummaries(
+  pressId: string,
+  runId: string,
+  items: FeedItem[],
+  hooks: PressCrawlHooks
+): PressCrawlResult {
+  const articles: ArticleDraft[] = []
+  const failures: CrawlFailure[] = []
+  const target = items.length
+
+  items.forEach((item, index) => {
+    if (!item.link || !item.title) {
+      failures.push({
+        ok: false,
+        url: item.link || '',
+        error: '피드 항목에 제목 또는 링크가 없습니다',
+        elapsedMs: 0,
+      })
+    } else {
+      const check = checkArticleContent(item.summary, 'rss-summary')
+      if (!check.ok) {
+        failures.push({ ok: false, url: item.link, error: check.reason, elapsedMs: 0 })
+      } else {
+        articles.push({
+          pressId,
+          runId,
+          title: item.title,
+          url: item.link,
+          content: check.content,
+          contentSource: 'rss-summary',
+          crawledAt: new Date().toISOString(),
+        })
+      }
+    }
+    hooks.onArticleDone?.(pressId, index + 1, target)
+  })
+
+  return { pressId, articles, failures }
+}
+
+async function crawlRssPress(
+  press: RssPressSource,
+  runId: string,
+  maxCount: number,
+  hooks: PressCrawlHooks
+): Promise<PressCrawlResult> {
+  const feedResult = await fetchFeed(press.feedUrl)
+  if (!feedResult.ok) {
+    // 피드 자체를 못 읽는 것은 개별 기사 격리 대상이 아니라 이 호출 전체의 실패다(D-003).
+    return { pressId: press.id, articles: [], failures: [feedResult] }
+  }
+
+  // 링크를 이 개수로 자른 뒤에 기사 크롤(또는 요약 검사)에 들어간다 — 자르기 전에 다 처리하지 않는다.
+  const items = feedResult.items.slice(0, maxCount)
+
+  if (!press.contentSelector) {
+    return collectRssSummaries(press.id, runId, items, hooks)
+  }
+
+  const links = items
+    .filter((item): item is FeedItem & { link: string } => item.link.length > 0)
+    .map((item) => ({ url: item.link, title: item.title }))
+  const { articles, failures } = await collectArticlePages(
+    press.id,
+    runId,
+    links,
+    press.contentSelector,
+    undefined,
+    hooks
+  )
+  return { pressId: press.id, articles, failures }
+}
+
+async function crawlHtmlPress(
+  press: HtmlPressSource,
+  runId: string,
+  maxCount: number,
+  hooks: PressCrawlHooks
+): Promise<PressCrawlResult> {
+  const listPage = await fetchHtml({ url: press.listUrl })
+  if (!listPage.ok) {
+    return { pressId: press.id, articles: [], failures: [listPage] }
+  }
+
+  const $ = loadDocument(listPage.html)
+  const allLinks = extractLinks($, press.listUrl, press.articleLinkSelector)
+
+  if (allLinks.length === 0) {
+    return {
+      pressId: press.id,
+      articles: [],
+      failures: [
+        {
+          ok: false,
+          url: press.listUrl,
+          error: '목록 페이지에서 기사 링크를 찾지 못했습니다(셀렉터를 확인하세요)',
+          elapsedMs: listPage.elapsedMs,
+        },
+      ],
+    }
+  }
+
+  const links = allLinks.slice(0, maxCount).map((url) => ({ url }))
+  const { articles, failures } = await collectArticlePages(
+    press.id,
+    runId,
+    links,
+    press.contentSelector,
+    press.titleSelector,
+    hooks
+  )
+  return { pressId: press.id, articles, failures }
+}
+
+/**
+ * 언론사 1곳을 방식(`press.sourceType`)에 맞게 크롤한다. 분기는 "기사 URL을 어떻게 얻는가"
+ * 한 지점뿐이다 — 그 이후(개수 제한·본문 정제·실패 격리·진행 콜백·Article 생성)는
+ * `collectArticlePages`/`collectArticlePage`를 두 경로가 그대로 공유한다.
+ *
+ * 이 함수는 저장소·HTTP를 모른다. 파일 쓰기는 호출부가 한다.
+ */
+export async function crawlPress(
+  press: PressSource,
+  runId: string,
+  options: PressCrawlOptions = {},
+  hooks: PressCrawlHooks = {}
+): Promise<PressCrawlResult> {
+  const maxCount = resolveMaxArticlesPerPress(options.maxArticlesPerPress)
+
+  return press.sourceType === 'rss'
+    ? crawlRssPress(press, runId, maxCount, hooks)
+    : crawlHtmlPress(press, runId, maxCount, hooks)
+}

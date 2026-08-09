@@ -40,13 +40,13 @@
 | Phase | 범위 | Task | 완료 | 상태 |
 |-------|------|------|------|------|
 | **Phase 0** | 완료된 기반 (프로젝트 골격·앱 셸·Kiwi 검증) | 3 (001–003) | 3 | ✅ 완료 |
-| **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 0 | ⬜ 대기 |
+| **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 1 | 🟡 진행 중 |
 | **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 0 | ⬜ 대기 |
 | **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 0 | ⬜ 대기 |
 | **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 0 | ⬜ 대기 |
-| **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 0 | ⬜ 대기 |
+| **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 1 | 🟡 진행 중 |
 | **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 0 | ⬜ 대기 |
-| **합계** | | **25** | **3** | **12%** |
+| **합계** | | **25** | **5** | **20%** |
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -129,7 +129,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 004 · 도메인 타입 및 zod 스키마 정의
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F001`~`F008` 공통 &nbsp;|&nbsp; 선행: 없음 (즉시 착수 가능)
+- [x] 완료 (1일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F001`~`F008` 공통 &nbsp;|&nbsp; 선행: 없음 (즉시 착수 가능)
+- **결과물**: `lib/types/{press,crawl-run,article,keyword,stopword,index}.ts`, `lib/types/press.test.ts`(거부 케이스 9건)
+- **남긴 한계**: `lib/types/keyword.ts`에 `keywordRankItemSchema`를 계획 외로 추가했다 — DoD 5번이 `KeywordRankItem` 대체 가능성을 명시적으로 요구해서다. 저장 스키마(`keywordCountSchema`)와 분리한 화면 파생 뷰다. `lib/crawler/types.ts`는 검토 후 수정하지 않았다(근거는 `docs/DECISIONS.md`). Stopword 단건/일괄은 공통 판별자 키가 없어 `discriminatedUnion` 대신 `z.union` + 각 분기 `strictObject`로 처리했다.
 - **참조**: `docs/PRD.md` §데이터 모델, `docs/screens/04-press-manage.md`(PressSource 인터페이스), `docs/screens/03-hot-keyword.md`(PosTag·AnalysisSummary·KeywordRankItem)
 - **생성/수정 파일**
   - `lib/types/press.ts` — **`pressSchema` = `z.discriminatedUnion('sourceType', [rssPressSchema, htmlPressSchema])`**
@@ -591,7 +593,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 019 · Kiwi 어댑터 (싱글턴 · 안전 래퍼 · 모델 검증)
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F005` &nbsp;|&nbsp; 선행: 개발 환경 준비(모델 배치)
+- [x] 완료 (1일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F005` &nbsp;|&nbsp; 선행: 개발 환경 준비(모델 배치)
+- **결과물**: `lib/keyword/kiwi.ts`, `lib/keyword/index.ts`. 공개 API는 `safeTokenize(text)` · `MATCH_OPTIONS`(393216) · `KiwiToken` 타입 셋뿐이다
+- **남긴 한계**: 「생성/수정 파일」이 산출물로 적은 `getKiwi()`는 **export하지 않았다** — 반환값이 원시 `Kiwi`라 DoD "원시 인스턴스 미노출"과 정면으로 충돌한다. 파일 안의 비공개 싱글턴 접근자로만 둔다(근거는 `docs/DECISIONS.md`). Task 020이 `blockList`·`typos`를 쓰게 되면 같은 패턴의 안전 래퍼를 새로 추가해 그 함수만 내보낸다.
 - **참조**: [`docs/kiwi-verification.md`](./kiwi-verification.md) §1 §2 §3(①③④⑤), `app/api/kiwi-check/route.ts`(참조 구현)
 - **생성/수정 파일**
   - `lib/keyword/kiwi.ts` (신규) — `getKiwi()` 싱글턴, `safeTokenize()`, `MATCH_OPTIONS` 상수, 모델 경로·존재 검증

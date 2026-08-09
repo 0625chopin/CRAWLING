@@ -16,6 +16,18 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname),
+      /**
+       * `server-only`는 `exports`의 `react-server` 조건으로 no-op(`empty.js`)과
+       * throw(`index.js`)를 가른다. 그 조건을 켜는 것은 Next.js 서버 번들뿐이라,
+       * vitest에서는 정상적인 서버 모듈조차 import 시점에 예외로 죽는다
+       * (`resolve.conditions`로는 풀리지 않는다).
+       * 패키지가 이미 갖고 있는 no-op 구현을 그대로 가리킨다 — 별도 스텁을 만들지 않는다.
+       * 클라이언트 번들 혼입을 막는 원래 역할은 `next build`가 그대로 수행한다.
+       */
+      'server-only': path.resolve(
+        import.meta.dirname,
+        'node_modules/server-only/empty.js'
+      ),
     },
   },
 })

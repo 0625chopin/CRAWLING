@@ -37,6 +37,22 @@ head -c 200 feed.xml
 node -e "const c=require('cheerio');fetch('<url>',{headers:{'User-Agent':'Mozilla/5.0'}}).then(r=>r.text()).then(h=>{const \$=c.load(h);console.log(\$('<selector>').length)})"
 ```
 
+### 재확인 로그
+
+**크롤 파이프라인 워크스트림이 010A 착수 전(1일차 유휴 대체작업)에 EUC-KR 후보 1건·UTF-8 후보 1건을 독립적으로
+다시 두드려 봤다.** 위 확인 일자와 같은 날이지만, `curl`로 응답 헤더·XML 선언을 뜬 뒤 `TextDecoder` + 설치된
+`fast-xml-parser`(5.10.1)로 실제 디코딩·파싱까지 태워 값이 안 바뀌었는지 확인했다.
+
+| 일시 | 대상 | 절차 | 결과 |
+| --- | --- | --- | --- |
+| 2026-08-10 | 보안뉴스 (EUC-KR) | `curl -D -` 헤더 확인 → 원문 바이트를 `TextDecoder('euc-kr')`로 디코딩 → `XMLParser({ ignoreAttributes: false, cdataPropName: '__cdata', parseTagValue: false })`로 파싱 | 200 OK · `Content-Type: text/xml`(charset 없음) · 선언 `<?xml version='1.0' encoding='euc-kr' ?>`(작은따옴표) 그대로 유지. EUC-KR로 디코딩하면 `<title>보안뉴스 &gt; 최신기사</title>`, 기사 제목·요약·`dc:creator`가 전부 정상 표시됨. UTF-8로 잘못 디코딩하면 그대로 깨짐(예: `���ȴ���`) 재현 확인. `<item>` 10건, 첫 기사에 `<dc:date>Sun, 9 Aug 2026 15:45:00 +0900</dc:date>` 확인 — 표와 오차 없음 |
+| 2026-08-10 | 블로터 (UTF-8) | 위와 동일 절차(디코더만 `'utf-8'`) | 200 OK · `Content-Type: application/xml`(charset 없음) · 선언 `encoding="utf-8"`(큰따옴표). `<item>` 50건, `description`(CDATA) 태그 제거 후 글자 수 최소 299 · 최대 300 · 평균 299.7자 — 표의 "300자(299~300)"와 일치. `<pubDate>`는 표대로 비표준 형식(`2026-08-09 18:00:00`, 타임존 없음)으로 확인 |
+
+**판정: 두 후보 모두 URL·인코딩·피드 형식·건수가 문서 기록과 정확히 일치하며 살아 있다. 대체 불필요.**
+이 재확인이 Task 010A DoD 「EUC-KR로 내려오는 피드에서 제목이 깨지지 않는다」의 검증 자산이 된다 — 실제로
+`fast-xml-parser`로 파싱한 결과물(디코딩된 한글 제목)까지 확인했다는 점에서 「응답이 200이다」보다 한 단계
+더 나간 확인이다.
+
 ---
 
 ## 후보 표

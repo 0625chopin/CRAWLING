@@ -209,3 +209,46 @@ try/catch 자체가 없어 같은 부류의 실패에서 **응답 봉투가 통�
 필수 메시지를 다는 것은 도달하지 않는 경로를 위해 모든 필드를 손보는 일이라 값어치가 낮다.
 **남는 거칢**: 생략 케이스의 문구가 사람이 읽는 라벨("언론사명")이 아니라 카멜케이스 키("name")를 노출한다.
 실사용 경로가 아니므로 감수한다.
+
+### D-010 · `aggregate.ts`는 `safeTokenize`를 직접 호출한다
+
+- 상태: 유효
+- 결정: 5일차 · 저장소 계층
+- 영향 Task: Task 020B · Task 021A
+
+**배경**: `AnalysisSummary`의 `totalTokenCount`(원 토큰)와 `filteredTokenCount`(조사·어미·접미사 제거 후)는
+020A의 `extractKeywords`/`filterKeywordTokens`만으로는 만들 수 없다. 두 함수는 이미 **품사(NNG/NNP/SL) +
+1글자 + 불용어**까지 다 걸러진 키워드 후보만 돌려주므로, 그보다 **느슨한 중간 집계 수치**를 얻으려면 원본
+토큰 배열이 따로 필요하다.
+**결정**: `aggregate.ts`가 `./kiwi`의 `safeTokenize(text)`를 직접 호출해 원본 토큰을 얻고, `totalTokenCount`·
+`filteredTokenCount`를 태그로 직접 센다. 키워드 후보 자체는 `filterKeywordTokens`(020A)를 그대로 재사용해
+POS·길이 필터를 다시 구현하지 않는다. `stopwordExcludedCount`는 `filterKeywordTokens`를 **불용어 없이/있이
+두 번 불러 그 차이로** 구한다 — 필터 로직을 손으로 옮겨 적지 않기 위함이다.
+**근거**: `safeTokenize`는 D-002가 `lib/keyword/index.ts`의 공개 API로 확정한 **안전 래퍼**이지 원시 `Kiwi`
+인스턴스가 아니다. `extract.test.ts`(020A)도 같은 패턴으로 직접 호출한다. "020B는 Kiwi를 직접 건드릴 필요가
+없다"는 안내는 **원시 인스턴스나 새 tokenize 래퍼를 만들 필요가 없다**는 뜻으로 읽는 것이 맞고, 이미 안전한
+공개 API를 부르는 것은 D-002와 충돌하지 않는다. 이 호출 없이는 DoD("5개 수치를 모두 산출")를 만족할 경로가
+없었다.
+**반영**: `lib/keyword/aggregate.ts`. **`filteredTokenCount`가 최종 키워드 수와 구분되는 것이 이 결정의 핵심
+결과다** — 두 수치가 같아지면 "조사를 걷어냈다"를 사용자에게 증명하는 근거가 무너진다.
+
+### D-011 · 화면 A/B 조각의 `page.tsx` 소유는 Task마다 다르며 work 문서가 정한다
+
+- 상태: 유효
+- 결정: 5일차 · 화면(제기) · 팀장(확정)
+- 영향 Task: Task 009A/009B · Task 012A/012B · Task 016A/016B · Task 018A/018B
+
+**배경**: 5일차 소환 프롬프트가 D-006을 "조각 A가 항상 `page.tsx`를 갖는다"로 읽고 009A에 `app/press/page.tsx`를
+배정했다. 담당이 착수 전에 **`docs/ROADMAP/work/03.화면.md`와 `docs/screens/playwright-scenarios.draft.md`가
+009에 한해 `page.tsx`를 009B 몫으로 정해 두었음**을 발견하고 멈춰 확인을 요청했다. 그대로 갔으면 `page.tsx`
+소유가 두 조각에 겹쳤을 것이다.
+**결정**: **D-006의 취지는 "라우트에 도달할 수 없어 A의 DoD를 검증하지 못하는 상황을 막는다"이고, 그 수단이
+`page.tsx`를 한 조각에 몰아 두는 것이다. 누가 갖느냐는 Task마다 다르며 work 문서가 단일 소스다.**
+- **009는 B가 `page.tsx`를 갖는다.** B가 나중에 오므로 **이미 완성된 A의 컴포넌트를 그대로 import**하면 되고
+  순방향 참조 문제가 애초에 없다. A의 DoD는 B 완료 회차에 함께 태운다(D-006 두 번째 항목).
+- **012·016·018은 A가 `page.tsx`를 갖는다.** A가 B의 컴포넌트를 정적 뼈대째 만들어 두고 B가 내부를 채운다.
+**근거**: work 문서는 영역 범위의 단일 소스다. 소환 프롬프트가 그것과 어긋나면 **문서가 이긴다.** 담당이
+착수 전에 멈춰 확인한 판단이 옳았고, 이 사례를 규칙으로 남겨 다음 회차의 소환 프롬프트가 같은 오해를
+반복하지 않게 한다.
+**반영**: 5일차에 009A는 컴포넌트 3종 + `press-client.ts`만 만들고 `app/press/page.tsx`는 손대지 않았다.
+012A는 `page.tsx`를 만들고 012B의 `stopword-add-card.tsx`를 뼈대로 두었다.

@@ -197,6 +197,22 @@ Playwright MCP로 실제 브라우저 동선을 태우는 것이 유일한 수�
 
 이 시나리오에서 다루지 않는 것(012B 몫): 단일/일괄 추가, 검색. 아래 012B 절 참고.
 
+### 5일차 실행 기록
+
+D-006 방향은 초안 그대로 맞았다(012A가 `page.tsx` 소유, 012B의 `stopword-add-card.tsx`를 정적 뼈대로
+import). `data/stopwords.json` 시드는 기본 7개 + 사용자 0개(초기 상태)였다 — 사용자 추가 3개는 별도로
+채워 넣지 않고, 대신 `POST /api/stopwords`로 임시 커스텀 단어 1개를 만들어 삭제 동선을 확인한 뒤
+삭제로 원상복구했다(파일이 최종적으로 시드와 동일함을 확인).
+
+- 기본 프리셋 칩 "이번" 삭제 버튼 클릭 → `AlertDialog` 노출, `document.activeElement.textContent === '취소'`로
+  초기 포커스 확인 → "취소" 클릭으로 실제 삭제는 하지 않고 데이터 보존.
+- 임시 커스텀 칩 "testword" 삭제 버튼 클릭 → 확인 다이얼로그 없이 즉시 삭제, `status` 라이브 리전에
+  "'testword' 불용어가 삭제되었습니다" 노출, 섹션이 `EmptyState`(Ban 아이콘)로 전환됨을 확인.
+- `data/stopwords.json`을 직접 열어 삭제·복원이 실제로 반영됐는지 대조 — 최종 상태가 원본 시드(7개, 사용자 0개)와
+  동일함을 확인.
+- 1280/768/375px 확인, 375px에서 `scrollWidth <= innerWidth` 참(가로 스크롤 없음).
+- `browser_console_messages` — 매 단계 0건.
+
 ---
 
 ## Task 012B · 불용어 관리 화면 — 추가·검색·삭제 동선

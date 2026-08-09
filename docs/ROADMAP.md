@@ -41,12 +41,12 @@
 |-------|------|------|------|------|
 | **Phase 0** | 완료된 기반 (프로젝트 골격·앱 셸·Kiwi 검증) | 3 (001–003) | 3 | ✅ 완료 |
 | **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 4 | ✅ 완료 |
-| **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 1 | 🟡 진행 중 |
+| **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 2 | 🟡 진행 중 |
 | **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 0 | ⬜ 대기 |
 | **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 0 | ⬜ 대기 |
-| **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 1 | 🟡 진행 중 |
+| **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 2 | 🟡 진행 중 |
 | **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 0 | ⬜ 대기 |
-| **합계** | | **25** | **9** | **36%** |
+| **합계** | | **25** | **11** | **44%** |
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -259,8 +259,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 008 · 언론사 CRUD API
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 006
-- **진행 메모**: 008A(목록·생성 API `app/api/press/route.ts` + 공통 응답 봉투 `lib/api/response.ts`) 완료(4일차). 조각 008B(단건 API `app/api/press/[id]/route.ts`)가 남아 이 블록은 체크하지 않는다. 오류 경계는 `withErrorBoundary`로 공용화했다(`docs/DECISIONS.md` D-008).
+- [x] 완료 (5일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 006
+- **결과물**: `app/api/press/route.ts`(008A · 4일차), `app/api/press/[id]/route.ts`(008B · 5일차), `lib/api/response.ts`
+- **남긴 한계**: 오류 경계를 `withErrorBoundary`로 공용화했다(`docs/DECISIONS.md` D-008). **DoD ④(DELETE 후 `data/runs/*` 무손상)는 코드로만 확인했다** — 검증 시점에 `data/runs/`가 비어 있어 실측하지 못했고, Task 013B가 실제 run을 만든 회차에 재확인한다.
 - **참조**: `docs/PRD.md` §언론사 관리 페이지, `docs/screens/04-press-manage.md`
 - **생성/수정 파일**
   - `app/api/press/route.ts` (신규) — `GET`(목록, `?active=true` 필터) / `POST`(추가)
@@ -284,6 +285,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 ### Task 009 · 언론사 관리 화면
 
 - [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 008
+- **진행 메모**: 009A(목록 표·카드 리스트·방식 배지 `components/press/{press-table,press-card-list,source-type-badge}.tsx` + `lib/api/press-client.ts`) 완료(5일차). 조각 009B(`app/press/page.tsx`·추가/수정/삭제 다이얼로그)가 남아 이 블록은 체크하지 않는다. **`page.tsx`가 009B 몫이라 `/press`는 아직 `ScreenPlaceholder`이고, 009A의 DoD는 009B 완료 회차에 함께 태운다**(D-006).
 - **참조**: `docs/screens/04-press-manage.md` (전 절 — 특히 "상태별 화면" ①~⑦, "접근성", "마크업 스켈레톤")
 - **생성/수정 파일**
   - `app/press/page.tsx` (수정 — `ScreenPlaceholder` 제거)
@@ -372,6 +374,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 ### Task 012 · 불용어 관리 화면
 
 - [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F008` &nbsp;|&nbsp; 선행: Task 011
+- **진행 메모**: 012A(`app/stopwords/page.tsx`에서 `ScreenPlaceholder` 제거 + `components/stopwords/{stopword-chip,stopword-section}.tsx` + `lib/api/stopword-client.ts`) 완료(5일차). 조각 012B(추가·일괄·검색 동선)가 남아 이 블록은 체크하지 않는다. `stopword-add-card.tsx`는 D-006대로 정적 뼈대만 두었다.
 - **참조**: `docs/screens/05-stopword-manage.md` (전 절 — "상태별 화면" ①~⑦, "접근성", "마크업 스켈레톤")
 - **생성/수정 파일**
   - `app/stopwords/page.tsx` (수정 — `ScreenPlaceholder` 제거)
@@ -637,8 +640,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 020 · 키워드 추출 · 집계 파이프라인
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F005` `F008` &nbsp;|&nbsp; 선행: Task 019, Task 006
-- **진행 메모**: 020A(키워드 추출 필터 `lib/keyword/{extract,fixtures}.ts` + `extract.test.ts`) 완료(4일차). 조각 020B(빈도 집계·`AnalysisSummary`)가 남아 이 블록은 체크하지 않는다. **함정 ② 회귀는 실제 Kiwi 모델로 판정된다** — `확장`·`적용`·`경쟁` 생존을 테스트가 확인한다. 검증 중 `것`·`수`는 `NNB`라 품사 필터에서 이미 걸러지고 **`점`만 길이 필터가 실제로 잡는다**는 것이 확인됐다.
+- [x] 완료 (5일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F005` `F008` &nbsp;|&nbsp; 선행: Task 019, Task 006
+- **결과물**: `lib/keyword/{extract,fixtures}.ts` + `extract.test.ts`(020A · 4일차), `lib/keyword/aggregate.ts` + `aggregate.test.ts`(020B · 5일차)
+- **남긴 한계**: **함정 ② 회귀는 실제 Kiwi 모델로 판정된다** — `확장`·`적용`·`경쟁` 생존을 테스트가 확인한다. 검증 중 `것`·`수`는 `NNB`라 품사 필터에서 이미 걸러지고 **`점`만 길이 필터가 실제로 잡는다**는 것이 확인됐다. `aggregate.ts`는 `totalTokenCount`를 얻기 위해 `safeTokenize`를 직접 호출한다(D-010) — `filteredTokenCount`는 최종 키워드 필터보다 느슨한 "조사·어미·접미사만 뺀" 기준이라 키워드 후보만으로는 만들 수 없다. 토큰 감소율 DoD는 정확 재현이 불가능한 입력이라 40~70% 밴드로 판정했다.
 - **참조**: `docs/PRD.md` §F005(태그 목록), `docs/kiwi-verification.md` §5 §6(1글자 제외·`이번`), `docs/screens/03-hot-keyword.md` §② 분석 요약
 - **생성/수정 파일**
   - `lib/keyword/extract.ts` (신규) — 토큰 → 키워드 후보(품사 필터 · 1글자 제외 · 불용어)

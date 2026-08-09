@@ -2,14 +2,11 @@ import 'server-only'
 
 import fs from 'node:fs/promises'
 
-import type { Article } from '@/lib/types/article'
+import type { Article, ArticleListItem, ArticleMeta } from '@/lib/types/article'
 
-import { parseArticle, parseArticleMeta, serializeArticle, type ArticleMeta } from './article-file'
+import { parseArticle, parseArticleMeta, serializeArticle } from './article-file'
 import { atomicWriteFile } from './json-store'
 import { articlePath, articlesDir } from './paths'
-
-/** listArticles의 반환 항목 별칭 — article-file.ts의 메타 스키마와 같은 모양이다. */
-export type ArticleListItem = ArticleMeta
 
 function isNotFoundError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT'

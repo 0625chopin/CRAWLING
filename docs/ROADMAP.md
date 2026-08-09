@@ -41,12 +41,12 @@
 |-------|------|------|------|------|
 | **Phase 0** | 완료된 기반 (프로젝트 골격·앱 셸·Kiwi 검증) | 3 (001–003) | 3 | ✅ 완료 |
 | **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 4 | ✅ 완료 |
-| **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 0 | ⬜ 대기 |
+| **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 1 | 🟡 진행 중 |
 | **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 0 | ⬜ 대기 |
 | **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 0 | ⬜ 대기 |
 | **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 1 | 🟡 진행 중 |
 | **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 0 | ⬜ 대기 |
-| **합계** | | **25** | **8** | **32%** |
+| **합계** | | **25** | **9** | **36%** |
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -260,6 +260,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 ### Task 008 · 언론사 CRUD API
 
 - [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 006
+- **진행 메모**: 008A(목록·생성 API `app/api/press/route.ts` + 공통 응답 봉투 `lib/api/response.ts`) 완료(4일차). 조각 008B(단건 API `app/api/press/[id]/route.ts`)가 남아 이 블록은 체크하지 않는다. 오류 경계는 `withErrorBoundary`로 공용화했다(`docs/DECISIONS.md` D-008).
 - **참조**: `docs/PRD.md` §언론사 관리 페이지, `docs/screens/04-press-manage.md`
 - **생성/수정 파일**
   - `app/api/press/route.ts` (신규) — `GET`(목록, `?active=true` 필터) / `POST`(추가)
@@ -351,7 +352,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 011 · 불용어 CRUD API
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F008` &nbsp;|&nbsp; 선행: Task 006
+- [x] 완료 (4일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F008` &nbsp;|&nbsp; 선행: Task 006
+- **결과물**: `app/api/stopwords/route.ts`, `app/api/stopwords/[id]/route.ts`
+- **남긴 한계**: 없음. Playwright MCP로 GET·POST(단건·중복·배열형 일괄·문자열형 일괄)·DELETE(정상·404)를 태워 상태 코드와 `data/stopwords.json`을 대조했다.
 - **참조**: `docs/PRD.md` §불용어 관리 페이지, `docs/screens/05-stopword-manage.md`
 - **생성/수정 파일**
   - `app/api/stopwords/route.ts` (신규) — `GET`(전체) / `POST`(단건 또는 `{ words: string[] }` 일괄)
@@ -635,6 +638,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 ### Task 020 · 키워드 추출 · 집계 파이프라인
 
 - [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F005` `F008` &nbsp;|&nbsp; 선행: Task 019, Task 006
+- **진행 메모**: 020A(키워드 추출 필터 `lib/keyword/{extract,fixtures}.ts` + `extract.test.ts`) 완료(4일차). 조각 020B(빈도 집계·`AnalysisSummary`)가 남아 이 블록은 체크하지 않는다. **함정 ② 회귀는 실제 Kiwi 모델로 판정된다** — `확장`·`적용`·`경쟁` 생존을 테스트가 확인한다. 검증 중 `것`·`수`는 `NNB`라 품사 필터에서 이미 걸러지고 **`점`만 길이 필터가 실제로 잡는다**는 것이 확인됐다.
 - **참조**: `docs/PRD.md` §F005(태그 목록), `docs/kiwi-verification.md` §5 §6(1글자 제외·`이번`), `docs/screens/03-hot-keyword.md` §② 분석 요약
 - **생성/수정 파일**
   - `lib/keyword/extract.ts` (신규) — 토큰 → 키워드 후보(품사 필터 · 1글자 제외 · 불용어)

@@ -139,3 +139,39 @@ Press id는 이름에서 만든 슬러그(소문자·영숫자·하이픈)인데
 
 **해소 예정**: `lib/types/`를 소유한 저장소 계층이 옮기고, 크롤 파이프라인이 import 경로를 따라 고친다.
 두 영역이 함께 손대야 하므로 회차 배치에서 조율한다.
+
+### I-008 · zod 필드가 요청 본문에서 통째로 생략되면 커스텀 한국어 메시지가 나오지 않는다
+
+- 상태: 해결됨(API 레벨 방어로 확정)
+- 발견: 4일차 · 저장소 계층(Task 008A 검증 중)
+- 관련 Task: Task 004 · Task 008A · Task 008B · Task 009B
+
+`z.string().min(1, '언론사명을 입력하세요')` 형태의 필드는 값이 **빈 문자열**로 오면 커스텀 한국어 메시지가
+정상적으로 나오지만, 그 키가 **요청 본문에서 아예 생략되면** zod가 `invalid_type` 단계에서 걸려 기본 영문
+메시지를 낸다 — 커스텀 메시지가 타입 검사가 아니라 `.min()` 부가 체크에만 붙어 있기 때문이다. 반면
+`z.url(msg)`은 생략돼도 커스텀 메시지가 나온다(형식 검사를 타입 검사와 같은 단계에서 한다).
+
+**해소**: `lib/api/response.ts`의 `fieldErrorsFromZod`가 "메시지에 한글이 하나도 없으면 일반화된 한국어
+문구로 치환"하는 방어를 수행한다. 이 방어로 확정하고 **스키마에 필수 메시지를 추가하지 않는다**(D-009).
+
+### I-009 · 기존 임시 라우트 2건이 원시 오류 메시지를 노출한다
+
+- 상태: 열림
+- 발견: 4일차 · 크롤 파이프라인(Task 008A 교차검증 중)
+- 관련 Task: Task 015A · Task 023
+
+`app/api/crawl/route.ts`와 `app/api/kiwi-check/route.ts`에 `error.message`를 응답에 그대로 싣는 코드가
+남아 있다. `docs/CONVENTIONS.md` §7("원시 오류를 화면까지 흘리지 않는다")과 어긋나지만, **두 라우트 모두
+제거 예정**이다 — `app/api/crawl/route.ts`는 Task 015A가 전면 교체하고 `app/api/kiwi-check/route.ts`는
+Task 023이 삭제한다. 새로 고치지 않고 그 Task에서 함께 사라지는 것으로 처리한다.
+
+### I-010 · `docs/screens/04-press-manage.md`의 "추가 설치 필요" 절이 낡았다
+
+- 상태: 열림(낮은 우선순위)
+- 발견: 4일차 · 화면(009A 착수 준비 중)
+- 관련 Task: Task 009A · Task 023
+
+`04-press-manage.md`가 dialog·alert-dialog·switch·label·textarea·toggle-group 6종을 "추가 설치 필요"로
+적고 있지만, `docs/screens/README.md`는 이 6종을 포함한 13종이 Task 002에서 설치 완료됐다고 못 박았고
+`components/ui/`에 실물이 존재한다. 화면 Task 착수 시 불필요한 설치 요청을 유발할 수 있다.
+Task 023(문서 정정)에서 함께 정리한다.

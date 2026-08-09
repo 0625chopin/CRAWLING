@@ -173,3 +173,39 @@ Task 007 구현 중 ROADMAP에 명시되지 않아 담당이 직접 판단한 �
 **③ `finishRun`의 상태 산출** — `failCount === 0 → 'done'`, `successCount === 0 → 'failed'`, 나머지 →
 `'partial-failed'`. **`'aborted'`는 이 함수의 책임이 아니다** — Task 014B(중단 API)가 `updateRunMeta`로 직접
 설정하는 경로로 남겨 두었다.
+
+### D-008 · 라우트의 오류 경계는 `withErrorBoundary`로 공용화한다
+
+- 상태: 유효
+- 결정: 4일차 · 크롤 파이프라인(지적) · 저장소 계층(구현) · 팀장(확정)
+- 영향 Task: Task 008A · Task 008B · Task 011 · Task 015A · Task 017 · Task 021B
+
+**배경**: 4일차 교차검증에서 `app/api/press/route.ts`의 500 catch가 `error.message`를 그대로 응답에 실어
+`CONVENTIONS.md` §7("원시 오류를 화면까지 흘리지 않는다")을 어기는 것이 발견됐고, `app/api/stopwords/route.ts`는
+try/catch 자체가 없어 같은 부류의 실패에서 **응답 봉투가 통째로 깨졌다.**
+**결정**: `lib/api/response.ts`에 `withErrorBoundary(fn, fallbackMessage)`를 두고 모든 라우트 핸들러가 저장소
+호출부를 이것으로 감싼다. 원시 오류는 `console.error`로 서버 콘솔에만 남기고, 응답은 항상
+`fail(fallbackMessage, 500)`로 나가 `{ ok, message }` 봉투가 유지된다.
+**근거**: 이 라우트들이 앞으로 만들 API 전부의 본이 된다. 여기서 새면 008B·015A·017·021B가 같은 구멍을
+복제하고, 나중에 다섯 군데를 동시에 고쳐야 한다. **`fn`이 반환하는 `Response`는 그대로 통과하고 throw만
+가로채므로**, 경계 안에서 `fail(msg, 404)`·`fail(msg, 409)`·`ok(data, 202)`를 `return`해도 500에 삼켜지지
+않는다 — 리뷰어가 404 케이스로 실증했고 015A의 202·409 시나리오에도 그대로 쓸 수 있음을 확인했다.
+**반영**: `lib/api/response.ts` · `app/api/press/route.ts` · `app/api/stopwords/route.ts` ·
+`app/api/stopwords/[id]/route.ts`. 이후 라우트는
+`return withErrorBoundary(async () => { ...; return ok(...) }, '한국어 실패 메시지')` 형태로 쓴다.
+
+### D-009 · zod 필드 생략 시의 한국어 메시지는 API 레벨 방어로 처리한다
+
+- 상태: 유효
+- 결정: 4일차 · 저장소 계층(제기) · 크롤 파이프라인(판정) · 팀장(확정)
+- 영향 Task: Task 004 · Task 008A · Task 008B · Task 011
+
+**배경**: I-008 — 요청 본문에서 키가 통째로 생략되면 zod 기본 영문 메시지가 나온다.
+**결정**: `fieldErrorsFromZod`의 "한글 없으면 일반화된 한국어 문구로 치환" 방어로 확정한다.
+**스키마(`lib/types/press.ts` 등)에 필수 메시지를 추가하지 않는다.**
+**근거**: 이 경로는 **컨트롤드 인풋 폼에서 애초에 도달 불가능하다** — 실제 화면(Task 009B `PressFormDialog`)은
+빈 값도 `""`으로 보내지 키를 생략하지 않으므로, 생략 케이스는 API를 직접 호출할 때만 나온다. 방어가 실제로
+한국어를 내보내는 것을 리뷰어가 직접 검증했다(`name` 키 생략 → `"name 값을 확인하세요"`). 스키마 전체에
+필수 메시지를 다는 것은 도달하지 않는 경로를 위해 모든 필드를 손보는 일이라 값어치가 낮다.
+**남는 거칢**: 생략 케이스의 문구가 사람이 읽는 라벨("언론사명")이 아니라 카멜케이스 키("name")를 노출한다.
+실사용 경로가 아니므로 감수한다.

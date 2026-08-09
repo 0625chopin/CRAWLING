@@ -7,11 +7,11 @@ import {
   type CrawlTarget,
 } from '@/lib/crawler'
 
-// Playwright는 네이티브 바이너리를 실행하므로 Edge 런타임에서 동작하지 않는다.
-export const runtime = 'nodejs'
+// Node.js 런타임이 이미 기본값이므로 runtime export를 두지 않는다.
+// Next.js 16에서 Edge 런타임이 폐기되면서 설치본 문서가 이 export의 제거를 지시한다
+// (node_modules/next/dist/docs/.../route-segment-config/runtime.md).
 // 크롤은 빌드 타임에 캐시될 수 없다.
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
 
 /**
  * 단건 { url } 과 배치 { targets: [...] } 요청을 모두 받는다.

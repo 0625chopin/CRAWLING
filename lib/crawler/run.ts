@@ -31,7 +31,8 @@ export async function runCrawl(
   return Promise.all(
     targets.map((target, index) =>
       limit(async () => {
-        // 동시 실행 슬롯 안에서 순번만큼 지연을 줘 요청이 한꺼번에 몰리지 않게 한다.
+        // 첫 대상을 뺀 나머지는 슬롯에 들어갈 때마다 고정 지연을 한 번 준다.
+        // (순번에 비례해 늘어나는 지연이 아니다 — index는 0인지만 판별한다.)
         if (delayMs > 0 && index > 0) {
           await sleep(delayMs)
         }

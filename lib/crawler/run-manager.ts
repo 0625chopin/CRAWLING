@@ -9,6 +9,7 @@ import type { Article } from '@/lib/types/article'
 import {
   crawlStartRequestSchema,
   type CrawlStartRequest,
+  type PressRunResult,
   type PressRunStatus,
   type RunProgress,
 } from '@/lib/types/crawl-run'
@@ -190,6 +191,25 @@ async function runOnePress(
 }
 
 /**
+ * 실행 종료 시점의 `PressRunStatus`를 `finishRun`이 받는 `PressRunResult`로 좁힌다(I-022).
+ * `'running'`은 절대 여기 도달하면 안 된다 — `runOnePress`는 끝나기 전에 반드시 `status`를
+ * `'waiting'`·`'done'`·`'failed'` 중 하나로 되돌리고, `runInBackground`는 그 `Promise.all`이
+ * 전부 끝난 뒤에만 이 함수를 부른다. 그런데도 `'running'`이 남아 있다면 `crawlPress`가 값이
+ * 아니라 예외로 실패해 그 상태 확정 코드 자체가 실행되지 않았다는 뜻이다 — 이 경우 조용히
+ * `'done'`이나 `'failed'`로 밀어 넣지 않고 즉시 던진다(그 신호를 지우면 다음 사람이 원인을
+ * 못 찾는다). 실제로 이 경로가 존재하는지는 `docs/ISSUES.draft.크롤파이프라인.md`에 남겼다.
+ */
+function toPressRunResult(status: PressRunStatus): PressRunResult {
+  const { status: pressStatus, ...rest } = status
+  if (pressStatus === 'running') {
+    throw new Error(
+      `[run-manager] finishRun 시점에 언론사 상태가 'running'으로 남아 있습니다: ${status.pressId}`
+    )
+  }
+  return { ...rest, status: pressStatus }
+}
+
+/**
  * 선택된 언론사들을 언론사 레벨 동시성 제한(D-013, `crawlerConfig.pressConcurrency`) 아래에서
  * 병렬로 돌리고, 끝나면 `finishRun`으로 실행을 마무리한다. `startRun`이 기다리지 않는 부분이다.
  */
@@ -235,7 +255,8 @@ async function runInBackground(
   progress.failCount = failCount
   progress.skippedCount = skippedCount
 
-  const finished = await finishRun(runId, { successCount, failCount, skippedCount })
+  const pressResults = pressStatuses.map(toPressRunResult)
+  const finished = await finishRun(runId, { successCount, failCount, skippedCount }, pressResults)
   // finishRun은 실패 건수로만 done/failed/partial-failed를 산출한다(D-007 ③) — 'aborted'는
   // 그 계산 밖이라 여기서 덮어쓴다. successCount/failCount/finishedAt은 finishRun이 이미 기록한
   // 값을 그대로 둔다(중단 시점까지 실제로 수집·저장한 결과이므로 보존한다).
@@ -310,9 +331,23 @@ export async function startRun(input: CrawlStartRequest): Promise<{ runId: strin
  * 아직 'running'이면 그 자체가 고아라는 증거다). `getRun`이 없는 runId는 예외로 던지므로 여기서
  * 따로 존재 확인을 하지 않는다.
  *
- * 언론사별 상세(진행률·실패 사유)는 메모리에만 있던 값이라 재구성할 수 없다 — `listArticles`로
- * 실제 저장된 기사 수만 언론사별로 세어 `collected`/`target`을 채우고, 하나라도 건졌으면 'done',
- * 아니면 'waiting'으로 본다(근거 없이 'failed'·failReason을 지어내지 않는다).
+ * **I-022 해소**: `finishRun`이 이미 언론사별 최종 결과(`pressResults`)를 파일에 남겨 두었으면
+ * (정상 종료 후 재시작) 근사하지 않고 그것을 그대로 쓴다 — `target`이 실제 목표치이고 실패 사유도
+ * 정확하다. `pressResults`가 비어 있을 때만(신 필드 도입 이전의 과거 run, 또는 `finishRun`이
+ * 호출되기도 전에 프로세스가 죽어 파일에 아무 언론사별 기록도 없는 run) 아래 근사 복원으로
+ * 폴백한다 — `listArticles`로 실제 저장된 기사 수만 언론사별로 세어 `collected`/`target`을
+ * 채우고, 하나라도 건졌으면 'done', 아니면 'waiting'으로 본다(근거 없이 'failed'·failReason을
+ * 지어내지 않는다).
+ *
+ * **`recovered` 플래그는 근사 폴백에서만 세운다.** `pressResults`로 복원한 경로는 디스크에서
+ * 읽었을 뿐 근사가 아니다 — `target`이 진짜 목표치이고 실패 사유도 실제 값이라, 이 필드가
+ * 문서화한 경고("target이 근사값", "언론사별 상세를 신뢰할 수 없다")가 적용되지 않는다. 여기서
+ * `recovered: true`를 계속 세우면 016B(`PressRunStatusList`)가 정확한 값을 받고도 런 레벨
+ * 안내 한 줄로 뭉개 버려 이 수정 자체가 무의미해진다.
+ *
+ * **남는 한계**: 서버가 크롤 **도중에** 죽으면(`finishRun`이 아예 불리지 않은 시점) `run-meta.json`은
+ * 여전히 `status: 'running'` · `pressResults: []`인 채로 남는다 — 이 경우는 근사 폴백만 가능하고,
+ * 그 시점까지 각 언론사가 실제로 얼마나 진행했는지는 재구성할 데이터 자체가 없다.
  */
 async function recoverRunProgress(runId: string): Promise<RunProgress> {
   const run = await getRun(runId)
@@ -321,6 +356,23 @@ async function recoverRunProgress(runId: string): Promise<RunProgress> {
     run.status === 'running'
       ? await updateRunMeta(runId, { status: 'aborted', finishedAt: run.finishedAt ?? new Date().toISOString() })
       : run
+
+  if (finalRun.pressResults.length > 0) {
+    return {
+      runId: finalRun.id,
+      status: finalRun.status,
+      overallPercent: 100,
+      currentPressName: null,
+      currentCollected: 0,
+      currentTarget: 0,
+      pressStatuses: finalRun.pressResults,
+      successCount: finalRun.successCount,
+      failCount: finalRun.failCount,
+      skippedCount: finalRun.skippedCount,
+      // recovered를 붙이지 않는다 — 위 함수 doc 참고. pressResults는 근사가 아니라 finishRun이
+      // 남긴 정확한 최종 값이다.
+    }
+  }
 
   const articles = await listArticles(runId)
   const collectedByPress = new Map<string, number>()
@@ -355,7 +407,7 @@ async function recoverRunProgress(runId: string): Promise<RunProgress> {
     successCount: finalRun.successCount,
     failCount: finalRun.failCount,
     skippedCount: finalRun.skippedCount,
-    // 레지스트리가 아니라 디스크에서 재구성한 스냅샷임을 알린다 — pressStatuses[].target이
+    // 레지스트리가 아니라 디스크에서 근사 재구성한 스냅샷임을 알린다 — pressStatuses[].target이
     // 실제 목표치가 아니라 collected와 같은 근사값이라는 뜻이다(위 함수 doc 참고, 8일차
     // 교차검증 후속). 화면은 이 플래그로 "확정 완료"가 아니라 "복구된 값"임을 구분해 그릴 수 있다.
     recovered: true,

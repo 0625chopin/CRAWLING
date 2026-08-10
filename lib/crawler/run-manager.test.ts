@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { RunNotFoundError } from '@/lib/storage/run-repository'
 import type { Article } from '@/lib/types/article'
-import type { CrawlRun } from '@/lib/types/crawl-run'
+import type { CrawlRun, PressRunResult } from '@/lib/types/crawl-run'
 import type { HtmlPressSource, RssPressSource } from '@/lib/types/press'
 
 import type { PressCrawlHooks, PressCrawlResult } from './press-crawler'
@@ -96,6 +96,9 @@ function makeRun(overrides: Partial<CrawlRun> = {}): CrawlRun {
     successCount: 0,
     failCount: 0,
     skippedCount: 0,
+    // z.infer 출력 타입은 .default([])가 있어도 필수 필드다(skippedCount와 같은 패턴) —
+    // 앞 구간(저장소 계층)이 crawlRunSchema에 pressResults를 추가하면서 이 리터럴이 깨졌다.
+    pressResults: [],
     status: 'running',
     ...overrides,
   }
@@ -104,7 +107,8 @@ function makeRun(overrides: Partial<CrawlRun> = {}): CrawlRun {
 /** 실행 로직 자체를 정확히 흉내 낸다 — run-manager가 finishRun 반환값을 그대로 신뢰하기 때문이다. */
 function finishRunLikeReal(
   runId: string,
-  counts: { successCount: number; failCount: number; skippedCount?: number }
+  counts: { successCount: number; failCount: number; skippedCount?: number },
+  pressResults: CrawlRun['pressResults'] = []
 ): CrawlRun {
   // skippedCount는 status 계산에 넣지 않는다(I-017) — 실제 finishRun과 같은 규칙이다.
   const status =
@@ -114,6 +118,7 @@ function finishRunLikeReal(
     successCount: counts.successCount,
     failCount: counts.failCount,
     skippedCount: counts.skippedCount ?? 0,
+    pressResults,
     status,
   })
 }
@@ -147,8 +152,11 @@ beforeEach(() => {
   configMock.pressConcurrency = 5
   createRunMock.mockImplementation(async (pressIds: string[]) => makeRun({ targetPressIds: pressIds }))
   finishRunMock.mockImplementation(
-    async (runId: string, counts: { successCount: number; failCount: number; skippedCount?: number }) =>
-      finishRunLikeReal(runId, counts)
+    async (
+      runId: string,
+      counts: { successCount: number; failCount: number; skippedCount?: number },
+      pressResults: CrawlRun['pressResults']
+    ) => finishRunLikeReal(runId, counts, pressResults)
   )
 })
 
@@ -286,11 +294,26 @@ describe('startRun', () => {
       pressId: 'ghost-press',
       status: 'failed',
     })
-    expect(finishRunMock).toHaveBeenCalledWith(RUN_ID, {
-      successCount: 0,
-      failCount: 1,
-      skippedCount: 0,
-    })
+    expect(finishRunMock).toHaveBeenCalledWith(
+      RUN_ID,
+      {
+        successCount: 0,
+        failCount: 1,
+        skippedCount: 0,
+      },
+      // getPress가 null인 언론사는 startRun이 이미 채워 둔 'failed' 상태 그대로 pressResults에
+      // 실린다(I-022) — runOnePress를 거치지 않으므로 여기서 새로 만들어지지 않는다.
+      [
+        {
+          pressId: 'ghost-press',
+          name: 'ghost-press',
+          status: 'failed',
+          collected: 0,
+          target: 0,
+          failReason: '존재하지 않는 언론사입니다',
+        },
+      ]
+    )
   })
 
   it('이미 running인 잡이 있으면 새 실행을 RunAlreadyRunningError로 거절한다(409로 내려갈 신호)', async () => {
@@ -306,7 +329,8 @@ describe('startRun', () => {
 
     await startRun({ pressIds: [press.id] })
 
-    await expect(startRun({ pressIds: [press.id] })).rejects.toThrow(RunAlreadyRunningError)
+    // toThrow(SomeClass)는 그 클래스가 사라지면 조용히 완화된다(I-046) — toBeInstanceOf로 못박는다.
+    await expect(startRun({ pressIds: [press.id] })).rejects.toBeInstanceOf(RunAlreadyRunningError)
     // createRun이 두 번째 시도에서 다시 호출되지 않아야 한다 — 거절이 저장소를 건드리기 전에 일어난다.
     expect(createRunMock).toHaveBeenCalledTimes(1)
 
@@ -387,11 +411,17 @@ describe('abortRun — 진행 중인 잡', () => {
     })
 
     // 실제로 시도했다가 실패한 1건만 failCount다. 건너뛴 2건은 별도 칸으로 간다.
-    expect(finishRunMock).toHaveBeenCalledWith(RUN_ID, {
-      successCount: 2,
-      failCount: 1,
-      skippedCount: 2,
-    })
+    expect(finishRunMock).toHaveBeenCalledWith(
+      RUN_ID,
+      {
+        successCount: 2,
+        failCount: 1,
+        skippedCount: 2,
+      },
+      // 언론사 자체는 기사를 2건 건졌으므로 isTotalFailure가 아니다 — 'done'으로 pressResults에
+      // 실린다(개별 기사 실패는 언론사 단위 상태와 별개, I-040).
+      [{ pressId: 'press-a', name: '언론사 A', status: 'done', collected: 0, target: 20 }]
+    )
   })
 
   it('이미 종료된 잡을 다시 중단하면 예외를 던진다', async () => {
@@ -404,7 +434,7 @@ describe('abortRun — 진행 중인 잡', () => {
       expect((await getRunProgress(RUN_ID)).status).not.toBe('running')
     })
 
-    await expect(abortRun(RUN_ID)).rejects.toThrow(RunNotAbortableError)
+    await expect(abortRun(RUN_ID)).rejects.toBeInstanceOf(RunNotAbortableError)
   })
 })
 
@@ -412,8 +442,8 @@ describe('getRunProgress / abortRun — 존재하지 않는 runId', () => {
   it('레지스트리에도 디스크에도 없는 runId는 RunNotFoundError로 알린다', async () => {
     getRunMock.mockRejectedValue(new RunNotFoundError('없는-run'))
 
-    await expect(getRunProgress('없는-run')).rejects.toThrow(RunNotFoundError)
-    await expect(abortRun('없는-run')).rejects.toThrow(RunNotFoundError)
+    await expect(getRunProgress('없는-run')).rejects.toBeInstanceOf(RunNotFoundError)
+    await expect(abortRun('없는-run')).rejects.toBeInstanceOf(RunNotFoundError)
   })
 })
 
@@ -477,6 +507,45 @@ describe('getRunProgress — 레지스트리에 없는 run의 복구(서버 재�
     // 이미 끝난 run을 다시 읽는 경로도 target을 collected로 근사하므로 마찬가지로 플래그를 세운다.
     expect(progress.recovered).toBe(true)
   })
+
+  // I-022 해소 회귀: finishRun이 이미 언론사별 최종 결과를 남긴 run은 근사하지 않는다.
+  it('디스크에 pressResults가 남아 있으면 근사하지 않고 그대로 쓰고 recovered를 세우지 않는다', async () => {
+    const FINISHED_ID = '20260809-180000'
+    const storedPressResults: PressRunResult[] = [
+      { pressId: 'press-a', name: '언론사 A', status: 'done', collected: 20, target: 20 },
+      {
+        pressId: 'press-b',
+        name: '언론사 B',
+        status: 'failed',
+        collected: 0,
+        target: 0,
+        failReason: '타임아웃',
+        rawFailReason: 'page.goto: Timeout 30000ms exceeded.',
+      },
+    ]
+    getRunMock.mockResolvedValue(
+      makeRun({
+        id: FINISHED_ID,
+        status: 'partial-failed',
+        targetPressIds: ['press-a', 'press-b'],
+        finishedAt: '2026-08-09T18:05:00+09:00',
+        successCount: 20,
+        failCount: 1,
+        pressResults: storedPressResults,
+      })
+    )
+
+    const progress = await getRunProgress(FINISHED_ID)
+
+    expect(progress.status).toBe('partial-failed')
+    // target이 실제 목표치 그대로다(근사 폴백처럼 collected로 강제되지 않는다).
+    expect(progress.pressStatuses).toEqual(storedPressResults)
+    // 정확한 값이므로 "근사치" 플래그를 세우지 않는다 — 세우면 016B가 정확한 상세를 받고도
+    // 런 레벨 안내 한 줄로 뭉갠다.
+    expect(progress.recovered).toBeUndefined()
+    // 이미 정확한 값이 있으므로 근사 복원 경로(listArticles로 기사 세기)를 타지 않는다.
+    expect(listArticlesMock).not.toHaveBeenCalled()
+  })
 })
 
 describe('abortRun — 레지스트리에 없는 run의 복구(서버 재시작 흉내)', () => {
@@ -497,7 +566,7 @@ describe('abortRun — 레지스트리에 없는 run의 복구(서버 재시작 
     const DONE_ID = '20260809-120000'
     getRunMock.mockResolvedValue(makeRun({ id: DONE_ID, status: 'done' }))
 
-    await expect(abortRun(DONE_ID)).rejects.toThrow(RunNotAbortableError)
+    await expect(abortRun(DONE_ID)).rejects.toBeInstanceOf(RunNotAbortableError)
     expect(updateRunMetaMock).not.toHaveBeenCalled()
   })
 })

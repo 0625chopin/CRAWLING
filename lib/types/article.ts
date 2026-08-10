@@ -21,3 +21,15 @@ export const articleSchema = z.object({
   crawledAt: z.iso.datetime({ offset: true }),
 })
 export type Article = z.infer<typeof articleSchema>
+
+/**
+ * articleSchema에서 content만 뺀 도메인 뷰 타입 — listArticles가 본문을 읽지 않고 메타 라인만으로
+ * 목록을 구성하므로(ROADMAP Task 007 DoD), 목록 조회 응답의 항목 형태가 곧 이 뷰다. 저장소 계층의
+ * 파일 파싱(lib/storage/article-file.ts)이 이 스키마로 검증하지만, 화면이 쓰는 파생 뷰라는 성격은
+ * lib/types/keyword.ts의 keywordRankItemSchema와 같다(I-007).
+ */
+export const articleMetaSchema = articleSchema.omit({ content: true })
+export type ArticleMeta = z.infer<typeof articleMetaSchema>
+
+/** listArticles의 반환 항목 별칭 — 위 메타 타입과 같은 모양이다. */
+export type ArticleListItem = ArticleMeta

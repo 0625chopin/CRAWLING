@@ -41,12 +41,12 @@
 |-------|------|------|------|------|
 | **Phase 0** | 완료된 기반 (프로젝트 골격·앱 셸·Kiwi 검증) | 3 (001–003) | 3 | ✅ 완료 |
 | **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 4 | ✅ 완료 |
-| **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 0 | ⬜ 대기 |
-| **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 0 | ⬜ 대기 |
+| **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 5 | ✅ 완료 |
+| **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 1 | 🟡 진행 중 |
 | **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 0 | ⬜ 대기 |
-| **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 1 | 🟡 진행 중 |
+| **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 2 | 🟡 진행 중 |
 | **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 0 | ⬜ 대기 |
-| **합계** | | **25** | **8** | **32%** |
+| **합계** | | **25** | **15** | **60%** |
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -253,13 +253,15 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ---
 
-## Phase 2: 언론사 · 불용어 레지스트리 (API + 화면) — `F007` `F008`
+## Phase 2: 언론사 · 불용어 레지스트리 (API + 화면) — `F007` `F008` ✅
 
 **목표** — 크롤링과 분석이 참조할 **입력 데이터**를 화면에서 관리할 수 있게 만든다. 이 Phase를 크롤링보다 먼저 두는 이유는 명확하다. 크롤링 실행 화면의 체크박스 목록이 언론사 데이터를 요구하고, 키워드 집계가 불용어 데이터를 요구한다. 둘 다 없으면 Phase 3~5를 손으로 검증할 방법이 없다.
 
 ### Task 008 · 언론사 CRUD API
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 006
+- [x] 완료 (5일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 006
+- **결과물**: `app/api/press/route.ts`(008A · 4일차), `app/api/press/[id]/route.ts`(008B · 5일차), `lib/api/response.ts`
+- **남긴 한계**: 오류 경계를 `withErrorBoundary`로 공용화했다(`docs/DECISIONS.md` D-008). **DoD ④(DELETE 후 `data/runs/*` 무손상)는 코드로만 확인했다** — 검증 시점에 `data/runs/`가 비어 있어 실측하지 못했고, Task 013B가 실제 run을 만든 회차에 재확인한다.
 - **참조**: `docs/PRD.md` §언론사 관리 페이지, `docs/screens/04-press-manage.md`
 - **생성/수정 파일**
   - `app/api/press/route.ts` (신규) — `GET`(목록, `?active=true` 필터) / `POST`(추가)
@@ -282,7 +284,10 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 009 · 언론사 관리 화면
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 008
+- [x] 완료 (6일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 008
+- **결과물**: `app/press/page.tsx`, `components/press/{press-table,press-card-list,source-type-badge,press-form-dialog,delete-press-dialog}.tsx`, `lib/api/press-client.ts`
+- **남긴 한계**: 「활성 토글을 끄면 홈 체크박스 목록에서 사라진다」는 홈이 실제 화면이 돼야 확인된다 — **Task 016B 완료 회차로 이월**. 조각 경계는 D-011대로 009B가 `page.tsx`를 소유했다.
+- **진행 메모(5일차)**: 009A(목록 표·카드 리스트·방식 배지 `components/press/{press-table,press-card-list,source-type-badge}.tsx` + `lib/api/press-client.ts`) 완료(5일차). 조각 009B(`app/press/page.tsx`·추가/수정/삭제 다이얼로그)가 남아 이 블록은 체크하지 않는다. **`page.tsx`가 009B 몫이라 `/press`는 아직 `ScreenPlaceholder`이고, 009A의 DoD는 009B 완료 회차에 함께 태운다**(D-006).
 - **참조**: `docs/screens/04-press-manage.md` (전 절 — 특히 "상태별 화면" ①~⑦, "접근성", "마크업 스켈레톤")
 - **생성/수정 파일**
   - `app/press/page.tsx` (수정 — `ScreenPlaceholder` 제거)
@@ -318,8 +323,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 010 · RSS 피드 파서 + 소스 테스트 API + 폼 연동
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 009
-- **진행 메모**: 010A(RSS 피드 파서 `lib/crawler/rss.ts`) 완료(2일차). 조각 010B(소스 테스트 API·폼 연동)가 남아 이 블록은 체크하지 않는다. `fetchFeed`는 실패를 예외가 아니라 `CrawlFailure` 값으로 돌려준다(`docs/DECISIONS.md` D-003).
+- [x] 완료 (7일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F007` &nbsp;|&nbsp; 선행: Task 009
+- **진행 메모**: 010A(RSS 피드 파서 `lib/crawler/rss.ts`) 완료(2일차) · 010B(소스 테스트 API·폼 연동) 완료(7일차). 두 조각이 모두 끝나 이 블록을 체크한다. `fetchFeed`는 실패를 예외가 아니라 `CrawlFailure` 값으로 돌려준다(`docs/DECISIONS.md` D-003).
+- **남긴 한계**: `lib/crawler/rss.ts`의 `toPlainText`가 `&apos;` 등 일부 HTML 엔티티를 걷어내지 못한다(I-011). 저장된 txt에 그대로 남아 키워드 추출 단계에 섞여 들어간다. 설계서 04의 "본문 전문 수집 스위치에 시각적 주의" 문장은 구체 스펙이 없어 구현하지 않았다(I-012).
 - **참조**: `docs/screens/04-press-manage.md` §설계 결정 근거 3, §상태별 화면 ③-C(성공/실패 결과 Alert), `docs/PRD.md` §기술 스택 "RSS 경로에 대한 두 가지 전제"
 - **의존성 주의**: 여기서 만드는 `lib/crawler/rss.ts`를 **Task 013의 크롤 오케스트레이터가 그대로 재사용**한다. 따라서 이 Task는 잘라낼 수 있는 부가 기능이 아니라 **Phase 3의 선행 조건**이다(결정 필요 사항 Q5 참고 — 잘라낼 수 있는 것은 테스트 UI뿐이다).
 - **생성/수정 파일**
@@ -351,7 +357,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 011 · 불용어 CRUD API
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F008` &nbsp;|&nbsp; 선행: Task 006
+- [x] 완료 (4일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F008` &nbsp;|&nbsp; 선행: Task 006
+- **결과물**: `app/api/stopwords/route.ts`, `app/api/stopwords/[id]/route.ts`
+- **남긴 한계**: 없음. Playwright MCP로 GET·POST(단건·중복·배열형 일괄·문자열형 일괄)·DELETE(정상·404)를 태워 상태 코드와 `data/stopwords.json`을 대조했다.
 - **참조**: `docs/PRD.md` §불용어 관리 페이지, `docs/screens/05-stopword-manage.md`
 - **생성/수정 파일**
   - `app/api/stopwords/route.ts` (신규) — `GET`(전체) / `POST`(단건 또는 `{ words: string[] }` 일괄)
@@ -368,7 +376,10 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 012 · 불용어 관리 화면
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F008` &nbsp;|&nbsp; 선행: Task 011
+- [x] 완료 (6일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F008` &nbsp;|&nbsp; 선행: Task 011
+- **결과물**: `app/stopwords/page.tsx`, `components/stopwords/{stopword-chip,stopword-section,stopword-add-card}.tsx`, `lib/api/stopword-client.ts`
+- **남긴 한계**: 없음. 5일차 교차검증이 짚은 로딩 스켈레톤 편차(설계서 05 §⑦)를 012B 회차에 함께 정리했다.
+- **진행 메모(5일차)**: 012A(`app/stopwords/page.tsx`에서 `ScreenPlaceholder` 제거 + `components/stopwords/{stopword-chip,stopword-section}.tsx` + `lib/api/stopword-client.ts`) 완료(5일차). 조각 012B(추가·일괄·검색 동선)가 남아 이 블록은 체크하지 않는다. `stopword-add-card.tsx`는 D-006대로 정적 뼈대만 두었다.
 - **참조**: `docs/screens/05-stopword-manage.md` (전 절 — "상태별 화면" ①~⑦, "접근성", "마크업 스켈레톤")
 - **생성/수정 파일**
   - `app/stopwords/page.tsx` (수정 — `ScreenPlaceholder` 제거)
@@ -411,8 +422,10 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 013 · 언론사 단위 크롤 오케스트레이터
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F001` `F003` &nbsp;|&nbsp; 선행: Task 007, Task 008, **Task 010**(RSS 파서)
-- **진행 메모**: 013A(기사 본문 수집·정제 `lib/crawler/article-parser.ts`) 완료(2일차). 조각 013B(언론사 방식 분기 오케스트레이터)가 남아 이 블록은 체크하지 않는다. DoD 8개 중 세 경로 수집·`contentSource` 기록·저장 txt 개행 확인은 013B로 이월했다.
+- [x] 완료 (6일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F001` `F003` &nbsp;|&nbsp; 선행: Task 007, Task 008, **Task 010**(RSS 파서)
+- **결과물**: `lib/crawler/article-parser.ts`(013A · 2일차), `lib/crawler/press-crawler.ts`(013B · 6일차), `lib/crawler/press-crawler.test.ts`
+- **남긴 한계**: DoD ⑧(저장된 txt 본문에 개행 2개 이상)은 **저장 경로가 붙는 Task 014A/015A 회차로 이월**했다 — `press-crawler`는 저장소를 모르므로 파일을 쓰지 않는다. 반환하는 `ArticleDraft.content`에 개행이 보존되는 것은 실데이터로 확인했다(zdnet 9~11개 · inews24 9~13개).
+- **진행 메모(2일차)**: 013A(기사 본문 수집·정제 `lib/crawler/article-parser.ts`) 완료(2일차). 조각 013B(언론사 방식 분기 오케스트레이터)가 남아 이 블록은 체크하지 않는다. DoD 8개 중 세 경로 수집·`contentSource` 기록·저장 txt 개행 확인은 013B로 이월했다.
 - **참조**: `docs/PRD.md` §F001·§기술 스택, `lib/crawler/{fetch-html,parse,run,rss}.ts`, `docs/screens/01-crawl-run.md` §크롤링 옵션 노출 범위 결정
 - **생성/수정 파일**
   - `lib/crawler/press-crawler.ts` (신규) — `crawlPress(press, options, hooks)` : `press.sourceType`으로 **기사 URL 수집 경로만 분기**하고 이후는 공통
@@ -446,6 +459,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 ### Task 014 · 실행 잡 관리자 (백그라운드 실행 · 진행 상태 · 중단)
 
 - [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F002` `F003` &nbsp;|&nbsp; 선행: Task 013
+- **진행 메모**: 014A(잡 레지스트리·백그라운드 실행 `lib/crawler/run-manager.ts`) 완료(7일차). 조각 014B(진행 상태 복구·중단·중복 실행 차단)가 남아 이 블록은 체크하지 않는다. DoD 5개 중 1~3번 충족, 4~5번(중단 후 `aborted` · 서버 재시작 시 중단 표시)은 014B로 이월했다(`docs/DECISIONS.md` D-016). `failReason`은 014A가 정형 라벨로 다듬는다(D-017), 언론사 레벨 동시성은 `pressConcurrency`로 제한한다(D-015).
 - **참조**: `docs/screens/01-crawl-run.md` §상태별 화면 ③④⑤, `docs/PRD.md` §F002
 - **생성/수정 파일**
   - `lib/crawler/run-manager.ts` (신규) — `startRun(input)` / `getRunProgress(runId)` / `abortRun(runId)` / **`globalThis`에 붙인 잡 레지스트리**
@@ -634,7 +648,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 020 · 키워드 추출 · 집계 파이프라인
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F005` `F008` &nbsp;|&nbsp; 선행: Task 019, Task 006
+- [x] 완료 (5일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F005` `F008` &nbsp;|&nbsp; 선행: Task 019, Task 006
+- **결과물**: `lib/keyword/{extract,fixtures}.ts` + `extract.test.ts`(020A · 4일차), `lib/keyword/aggregate.ts` + `aggregate.test.ts`(020B · 5일차)
+- **남긴 한계**: **함정 ② 회귀는 실제 Kiwi 모델로 판정된다** — `확장`·`적용`·`경쟁` 생존을 테스트가 확인한다. 검증 중 `것`·`수`는 `NNB`라 품사 필터에서 이미 걸러지고 **`점`만 길이 필터가 실제로 잡는다**는 것이 확인됐다. `aggregate.ts`는 `totalTokenCount`를 얻기 위해 `safeTokenize`를 직접 호출한다(D-010) — `filteredTokenCount`는 최종 키워드 필터보다 느슨한 "조사·어미·접미사만 뺀" 기준이라 키워드 후보만으로는 만들 수 없다. 토큰 감소율 DoD는 정확 재현이 불가능한 입력이라 40~70% 밴드로 판정했다.
 - **참조**: `docs/PRD.md` §F005(태그 목록), `docs/kiwi-verification.md` §5 §6(1글자 제외·`이번`), `docs/screens/03-hot-keyword.md` §② 분석 요약
 - **생성/수정 파일**
   - `lib/keyword/extract.ts` (신규) — 토큰 → 키워드 후보(품사 필터 · 1글자 제외 · 불용어)

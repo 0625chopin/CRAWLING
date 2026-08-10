@@ -238,6 +238,34 @@ Task 010A DoD 「RSS 2.0 피드와 Atom 피드가 같은 `FeedItem` 형태로 �
 
 ---
 
+## 013B 검증용 시드 (4일차 기록)
+
+**4일차, 크롤 파이프라인**이 위 「`data/press-sources.json` 시드 예시」를 실제로 `data/press-sources.json`에
+그대로 옮겨 적었다(경고문의 지시대로 착수 시점에 손으로 채웠다). `data/`는 `.gitignore` 대상이라 커밋되지
+않으므로, 다른 머신에서 재현하려면 아래 5건을 그대로 다시 써넣으면 된다 — 내용은 위 JSON 예시와 동일하다.
+
+| id | name | sourceType | 핵심 필드 | isActive |
+| --- | --- | --- | --- | --- |
+| `bloter` | 블로터 | rss | `feedUrl` (contentSelector 없음 → 요약만) | true |
+| `boannews` | 보안뉴스 | rss | `feedUrl`(EUC-KR) | true |
+| `inews24` | 아이뉴스24 | rss | `feedUrl` + `contentSelector: "#articleBody > p"` | true |
+| `zdnet-korea` | ZDNet 코리아 | html | `listUrl` + `articleLinkSelector` + `titleSelector` + `contentSelector` | true |
+| `naver-d2` | 네이버 D2 | rss | `feedUrl`(Atom) — 크롤 대상 아님, 파서 검증 전용 | false |
+
+**세 형태(HTML · RSS 요약만 · RSS 본문 전문) 커버리지**: `zdnet-korea`가 HTML, `bloter`가 RSS 요약만
+(`contentSelector` 없음), `inews24`가 RSS 본문 전문(`contentSelector` 있음)을 각각 담당해 Task 013B DoD가
+요구하는 세 경로가 전부 실물로 선다. `isActive: true`인 3곳(bloter·boannews·inews24 중 RSS 2곳 + html 1곳)이
+Phase 2 완료 기준("RSS·HTML 각 1곳 이상, 최소 3곳")도 함께 만족한다.
+
+**검증 방법과 결과**: `lib/storage/press-repository.ts`의 `listPress()`를 임시 vitest 케이스로 호출해
+① 전체 5건이 zod 검증(`pressSchema`)을 통과하고, ② `zdnet.sourceType === 'html'`로 좁혔을 때
+`articleLinkSelector`·`contentSelector`에 타입 에러 없이 접근되며, ③ `inews24.sourceType === 'rss'`로 좁혔을
+때 `contentSelector`가 값을 갖고 `bloter`는 `undefined`이고, ④ `listPress({ activeOnly: true })`에서 `naver-d2`가
+빠지는 것을 확인했다. 검증용 테스트 파일은 확인 직후 삭제했다(회귀 스위트에 남기지 않는다 — 이 파일은
+「데이터가 이렇게 들어있다」를 확인하는 1회성 스팟체크이지, `lib/` 순수 함수 회귀 테스트가 아니다).
+
+---
+
 ## 크롤링 예의
 
 **이 도구는 로컬 1인용 테스트 도구다.** 서비스로 배포되지 않고, 수집한 기사는 `data/` 아래 txt로만 남으며

@@ -1,8 +1,6 @@
 import 'server-only'
 
-import { z } from 'zod'
-
-import { articleSchema, type Article } from '@/lib/types/article'
+import { articleSchema, articleMetaSchema, type Article, type ArticleMeta } from '@/lib/types/article'
 
 /**
  * 메타 라인 하나의 형태 — "# key: value". key는 카멜케이스 영문자만 쓰므로 letters-only로 충분하다.
@@ -10,13 +8,6 @@ import { articleSchema, type Article } from '@/lib/types/article'
  * 전부 값으로 취급되므로 별도 이스케이프가 필요 없다.
  */
 const META_LINE_PATTERN = /^# ([a-zA-Z]+): (.*)$/
-
-/**
- * articleSchema에서 content만 뺀 메타 필드 스키마. id·pressId·url 형식 검증을 여기서 다시
- * 정의하지 않고 도메인 스키마(lib/types/article.ts, Task 004)를 그대로 재사용한다.
- */
-export const articleMetaSchema = articleSchema.omit({ content: true })
-export type ArticleMeta = z.infer<typeof articleMetaSchema>
 
 /**
  * 메타 라인에 개행이 섞이면 다음 physical line이 새 메타 필드로 오인되어 파싱이 깨진다

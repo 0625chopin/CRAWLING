@@ -173,3 +173,239 @@ Task 007 구현 중 ROADMAP에 명시되지 않아 담당이 직접 판단한 �
 **③ `finishRun`의 상태 산출** — `failCount === 0 → 'done'`, `successCount === 0 → 'failed'`, 나머지 →
 `'partial-failed'`. **`'aborted'`는 이 함수의 책임이 아니다** — Task 014B(중단 API)가 `updateRunMeta`로 직접
 설정하는 경로로 남겨 두었다.
+
+### D-008 · 라우트의 오류 경계는 `withErrorBoundary`로 공용화한다
+
+- 상태: 유효
+- 결정: 4일차 · 크롤 파이프라인(지적) · 저장소 계층(구현) · 팀장(확정)
+- 영향 Task: Task 008A · Task 008B · Task 011 · Task 015A · Task 017 · Task 021B
+
+**배경**: 4일차 교차검증에서 `app/api/press/route.ts`의 500 catch가 `error.message`를 그대로 응답에 실어
+`CONVENTIONS.md` §7("원시 오류를 화면까지 흘리지 않는다")을 어기는 것이 발견됐고, `app/api/stopwords/route.ts`는
+try/catch 자체가 없어 같은 부류의 실패에서 **응답 봉투가 통째로 깨졌다.**
+**결정**: `lib/api/response.ts`에 `withErrorBoundary(fn, fallbackMessage)`를 두고 모든 라우트 핸들러가 저장소
+호출부를 이것으로 감싼다. 원시 오류는 `console.error`로 서버 콘솔에만 남기고, 응답은 항상
+`fail(fallbackMessage, 500)`로 나가 `{ ok, message }` 봉투가 유지된다.
+**근거**: 이 라우트들이 앞으로 만들 API 전부의 본이 된다. 여기서 새면 008B·015A·017·021B가 같은 구멍을
+복제하고, 나중에 다섯 군데를 동시에 고쳐야 한다. **`fn`이 반환하는 `Response`는 그대로 통과하고 throw만
+가로채므로**, 경계 안에서 `fail(msg, 404)`·`fail(msg, 409)`·`ok(data, 202)`를 `return`해도 500에 삼켜지지
+않는다 — 리뷰어가 404 케이스로 실증했고 015A의 202·409 시나리오에도 그대로 쓸 수 있음을 확인했다.
+**반영**: `lib/api/response.ts` · `app/api/press/route.ts` · `app/api/stopwords/route.ts` ·
+`app/api/stopwords/[id]/route.ts`. 이후 라우트는
+`return withErrorBoundary(async () => { ...; return ok(...) }, '한국어 실패 메시지')` 형태로 쓴다.
+
+### D-009 · zod 필드 생략 시의 한국어 메시지는 API 레벨 방어로 처리한다
+
+- 상태: 유효
+- 결정: 4일차 · 저장소 계층(제기) · 크롤 파이프라인(판정) · 팀장(확정)
+- 영향 Task: Task 004 · Task 008A · Task 008B · Task 011
+
+**배경**: I-008 — 요청 본문에서 키가 통째로 생략되면 zod 기본 영문 메시지가 나온다.
+**결정**: `fieldErrorsFromZod`의 "한글 없으면 일반화된 한국어 문구로 치환" 방어로 확정한다.
+**스키마(`lib/types/press.ts` 등)에 필수 메시지를 추가하지 않는다.**
+**근거**: 이 경로는 **컨트롤드 인풋 폼에서 애초에 도달 불가능하다** — 실제 화면(Task 009B `PressFormDialog`)은
+빈 값도 `""`으로 보내지 키를 생략하지 않으므로, 생략 케이스는 API를 직접 호출할 때만 나온다. 방어가 실제로
+한국어를 내보내는 것을 리뷰어가 직접 검증했다(`name` 키 생략 → `"name 값을 확인하세요"`). 스키마 전체에
+필수 메시지를 다는 것은 도달하지 않는 경로를 위해 모든 필드를 손보는 일이라 값어치가 낮다.
+**남는 거칢**: 생략 케이스의 문구가 사람이 읽는 라벨("언론사명")이 아니라 카멜케이스 키("name")를 노출한다.
+실사용 경로가 아니므로 감수한다.
+
+### D-010 · `aggregate.ts`는 `safeTokenize`를 직접 호출한다
+
+- 상태: 유효
+- 결정: 5일차 · 저장소 계층
+- 영향 Task: Task 020B · Task 021A
+
+**배경**: `AnalysisSummary`의 `totalTokenCount`(원 토큰)와 `filteredTokenCount`(조사·어미·접미사 제거 후)는
+020A의 `extractKeywords`/`filterKeywordTokens`만으로는 만들 수 없다. 두 함수는 이미 **품사(NNG/NNP/SL) +
+1글자 + 불용어**까지 다 걸러진 키워드 후보만 돌려주므로, 그보다 **느슨한 중간 집계 수치**를 얻으려면 원본
+토큰 배열이 따로 필요하다.
+**결정**: `aggregate.ts`가 `./kiwi`의 `safeTokenize(text)`를 직접 호출해 원본 토큰을 얻고, `totalTokenCount`·
+`filteredTokenCount`를 태그로 직접 센다. 키워드 후보 자체는 `filterKeywordTokens`(020A)를 그대로 재사용해
+POS·길이 필터를 다시 구현하지 않는다. `stopwordExcludedCount`는 `filterKeywordTokens`를 **불용어 없이/있이
+두 번 불러 그 차이로** 구한다 — 필터 로직을 손으로 옮겨 적지 않기 위함이다.
+**근거**: `safeTokenize`는 D-002가 `lib/keyword/index.ts`의 공개 API로 확정한 **안전 래퍼**이지 원시 `Kiwi`
+인스턴스가 아니다. `extract.test.ts`(020A)도 같은 패턴으로 직접 호출한다. "020B는 Kiwi를 직접 건드릴 필요가
+없다"는 안내는 **원시 인스턴스나 새 tokenize 래퍼를 만들 필요가 없다**는 뜻으로 읽는 것이 맞고, 이미 안전한
+공개 API를 부르는 것은 D-002와 충돌하지 않는다. 이 호출 없이는 DoD("5개 수치를 모두 산출")를 만족할 경로가
+없었다.
+**반영**: `lib/keyword/aggregate.ts`. **`filteredTokenCount`가 최종 키워드 수와 구분되는 것이 이 결정의 핵심
+결과다** — 두 수치가 같아지면 "조사를 걷어냈다"를 사용자에게 증명하는 근거가 무너진다.
+
+### D-011 · 화면 A/B 조각의 `page.tsx` 소유는 Task마다 다르며 work 문서가 정한다
+
+- 상태: 유효
+- 결정: 5일차 · 화면(제기) · 팀장(확정)
+- 영향 Task: Task 009A/009B · Task 012A/012B · Task 016A/016B · Task 018A/018B
+
+**배경**: 5일차 소환 프롬프트가 D-006을 "조각 A가 항상 `page.tsx`를 갖는다"로 읽고 009A에 `app/press/page.tsx`를
+배정했다. 담당이 착수 전에 **`docs/ROADMAP/work/03.화면.md`와 `docs/screens/playwright-scenarios.draft.md`가
+009에 한해 `page.tsx`를 009B 몫으로 정해 두었음**을 발견하고 멈춰 확인을 요청했다. 그대로 갔으면 `page.tsx`
+소유가 두 조각에 겹쳤을 것이다.
+**결정**: **D-006의 취지는 "라우트에 도달할 수 없어 A의 DoD를 검증하지 못하는 상황을 막는다"이고, 그 수단이
+`page.tsx`를 한 조각에 몰아 두는 것이다. 누가 갖느냐는 Task마다 다르며 work 문서가 단일 소스다.**
+- **009는 B가 `page.tsx`를 갖는다.** B가 나중에 오므로 **이미 완성된 A의 컴포넌트를 그대로 import**하면 되고
+  순방향 참조 문제가 애초에 없다. A의 DoD는 B 완료 회차에 함께 태운다(D-006 두 번째 항목).
+- **012·016·018은 A가 `page.tsx`를 갖는다.** A가 B의 컴포넌트를 정적 뼈대째 만들어 두고 B가 내부를 채운다.
+**근거**: work 문서는 영역 범위의 단일 소스다. 소환 프롬프트가 그것과 어긋나면 **문서가 이긴다.** 담당이
+착수 전에 멈춰 확인한 판단이 옳았고, 이 사례를 규칙으로 남겨 다음 회차의 소환 프롬프트가 같은 오해를
+반복하지 않게 한다.
+**반영**: 5일차에 009A는 컴포넌트 3종 + `press-client.ts`만 만들고 `app/press/page.tsx`는 손대지 않았다.
+012A는 `page.tsx`를 만들고 012B의 `stopword-add-card.tsx`를 뼈대로 두었다.
+
+### D-012 · `crawlPress`는 저장소를 모른다 — `runId`를 인자로 받고 `id` 없는 `ArticleDraft`를 반환한다
+
+- 상태: 유효
+- 결정: 6일차 · 크롤 파이프라인(Task 013B)
+- 영향 Task: Task 013B · Task 014A
+
+**배경**: `Article` 스키마는 `id`(실행 전체에서 유일한 4자리 순번)를 요구하는데, 이 모듈은 **언론사 1곳만 보고
+크롤하므로 다른 언론사가 같은 실행에서 몇 건을 만들지 알 수 없어** 전역 순번을 스스로 매길 수 없다.
+**결정**:
+1. `crawlPress(press, runId, options?, hooks?)` — `runId`를 문자열 인자로 받는다. **이 모듈은 `lib/storage/`를
+   import하지 않는다.** 호출부(014A)가 `createRun`으로 만든 값을 전달만 한다.
+2. 반환은 **`ArticleDraft = Omit<Article, 'id'>`**. `id`는 014A가 여러 언론사 결과를 모아 저장 시점에 매긴다.
+3. `PressCrawlResult.failures: CrawlFailure[]`는 **언론사 전체 실패**(피드·목록 페이지 실패·링크 0건 — 이때
+   `failures.length === 1`이고 `articles`는 빈 배열)와 **개별 기사 실패**를 함께 담는다. 호출부가 배열의
+   길이·내용으로 두 경우를 모두 판단할 수 있다.
+**근거**: 저장소나 전역 순번 배정을 이 모듈에 넣으면 "이 모듈은 저장소·HTTP를 모른다"는 경계와 충돌한다.
+`id`를 호출부가 채우는 편이 이 모듈이 저장소를 import하는 것보다 경계가 명확하다.
+**반영**: `lib/crawler/press-crawler.ts`. **Task 014A는 이 계약을 그대로 전제하면 된다** — ① `createRun`의
+`runId`를 넘기고 ② 반환된 `articles`에 전역 순번을 매겨 `saveArticle` ③ 성공·실패 합산으로 `finishRun`.
+
+### D-013 · 언론사 레벨 동시성은 Task 014A가 별도로 제한할지 판단한다
+
+- 상태: 해소 (7일차 · D-015로 판단 완료)
+- 결정: 6일차 · 크롤 파이프라인(제기)
+- 영향 Task: Task 014A
+
+`crawlPress`는 자기 안에서 `crawlerConfig.concurrency`(기본 2)만큼 동시 페이지를 연다. **014A가 언론사 N곳을
+병렬로 돌리면 실제 동시 페이지 수가 N×2가 된다.** 대상 서버 부담 방지가 이 설정의 목적이므로, 014A가 언론사
+레벨 동시성도 별도로 제한할지 그 Task 착수 시 판단한다. 013B 범위 밖이라 열어 둔다.
+
+### D-014 · 재사용 다이얼로그는 effect로 폼을 다시 채우지 않고 `key` 리마운트로 초기화한다
+
+- 상태: 유효
+- 결정: 6일차 · 화면(Task 009B)
+- 영향 Task: Task 009B · Task 016A · Task 018 계열(같은 "재사용 다이얼로그" 패턴)
+
+**배경**: 009A의 표·카드는 수정/삭제 버튼에서 다이얼로그를 직접 열지 않고 **콜백만 부모에 알린다.** 그래서
+`PressFormDialog`는 `app/press/page.tsx`가 들고 있는 `open`/`press` 상태로 제어된다. 처음에는 "열릴 때마다
+`useEffect`로 폼 필드를 다시 채우는" 방식으로 구현했는데, 이 저장소에 켜져 있는
+**`react-hooks/set-state-in-effect` 규칙이 `npm run lint`를 실패**시켰다(effect 본문에서 여러 `setState`를
+동기 호출하면 cascading renders 경고).
+**결정**: 페이지가 다이얼로그를 열 때마다 증가하는 카운터를 `key`로 넘겨 **컴포넌트를 통째로 리마운트**한다.
+그러면 다이얼로그 내부의 모든 `useState`가 props를 초기값으로 삼는 평범한 형태로 충분해지고, "열릴 때마다
+다시 채우는" effect 자체가 사라진다. **닫힐 때는 `key`를 바꾸지 않으므로** Radix Dialog의 닫힘 애니메이션이
+보존된다.
+**근거**: React 공식 문서(「You Might Not Need an Effect」 §Resetting state with a key)가 권하는 표준 패턴이다.
+**부수 효과가 오히려 이득이다** — 행마다 다이얼로그를 인스턴스화하는 대신 페이지가 **하나만** 렌더링하므로
+`press-name`·`press-feed-url` 같은 `id`가 페이지 안에서 항상 유일하다. 행이 N개면 같은 `id`를 가진 입력이
+DOM에 N개 존재할 뻔한 문제를 피한다.
+**설계서와의 관계**: `docs/screens/04-press-manage.md`의 마크업 스켈레톤은 행마다 트리거를 두는 형태지만,
+스켈레톤은 "구현은 파일 분할 경계 표대로 나눈다"는 전제의 참고 자료이지 리터럴 규격이 아니다. 상태 소유
+구조를 바꾼 것은 설계서 위반이 아니라고 판단했다.
+**반영**: `app/press/page.tsx`(다이얼로그 상태 소유) · `components/press/{press-form-dialog,delete-press-dialog}.tsx`
+(항상 controlled `open`/`onOpenChange`, 개별 트리거 prop 없음).
+
+**같은 규칙에서 나온 데이터 페칭 관용구**: `useCallback`/`useEffectEvent`로 감싼 함수를 이펙트에서 호출해도
+이 규칙에 걸린다. `useEffect(() => { fetchX().then(setState).catch(setState) }, [dep])` 형태로 **완전히
+인라인**해야 통과한다. Task 016A·018A도 데이터 조회가 필요하니 이 형태를 그대로 쓴다.
+
+### D-015 · 언론사 레벨 동시성은 `pressConcurrency`로 별도 제한한다
+
+- 상태: 유효 (D-013 판단 이월분 해소)
+- 결정: 7일차 · 크롤 파이프라인(Task 014A)
+- 영향 Task: Task 014A
+
+**배경**: `crawlPress`는 언론사 1곳 안에서 `crawlerConfig.concurrency`(기본 2)만큼 동시 페이지를 연다.
+`startRun`이 선택된 언론사 N곳을 전부 병렬로 실행하면 실제 동시 Playwright 페이지 수가 N×2가 된다.
+
+**결정**: `crawlerConfig`에 `pressConcurrency`(기본 3, `CRAWL_PRESS_CONCURRENCY`로 조정)를 추가하고
+`run-manager.ts`가 `pLimit(crawlerConfig.pressConcurrency)`로 언론사 단위 동시 실행 수를 한 번 더 제한한다.
+
+**근거**: `concurrency`는 **대상 서버 1곳**으로 가는 동시 요청을 막는 장치라, 서로 다른 언론사(=서로 다른
+호스트)를 병렬로 돌려도 특정 서버의 부담은 늘지 않는다 — D-013이 우려한 "대상 서버 부담"은 사실 언론사
+수가 늘어도 커지지 않는다. 반면 이 프로세스가 동시에 여는 Playwright 페이지 총량은 **로컬 리소스**이고,
+언론사 등록은 코드 수정 없이 자유로우므로(F007) 무한정 커질 수 있다. 그래서 대상 서버 보호가 아니라
+**로컬 리소스 보호** 목적으로 캡을 씌웠다. **값 3은 실측이 아니라 보수적 추정이다** — 다수 언론사 동시
+크롤 시 메모리 사용량을 재서 조정할 수 있다.
+
+**반영**: `lib/crawler/config.ts` · `lib/crawler/run-manager.ts`.
+
+### D-016 · Task 014A와 014B의 `getRunProgress`·`abortRun` 경계
+
+- 상태: 유효
+- 결정: 7일차 · 크롤 파이프라인(Task 014A)
+- 영향 Task: Task 014A · Task 014B
+
+**배경**: `docs/ROADMAP.md` Task 014는 `startRun`/`getRunProgress`/`abortRun`을 한 블록으로 묶었지만
+work 문서는 014A(잡 레지스트리·백그라운드 실행)와 014B(진행 복구·중단·중복 차단)로 쪼갰다. 두 함수를
+이번 회차에 얼마나 구현할지 경계가 코드로는 드러나지 않는다.
+
+**결정**: 014A는 여기까지만 구현한다.
+- `getRunProgress`: 레지스트리에서 진행 스냅샷을 읽어 반환한다. **서버 재시작으로 레지스트리가 비었을 때
+  `run-meta.json`으로 복구하지 않는다** — 찾지 못하면 예외를 던진다.
+- `abortRun`: `RunJob.aborted` 플래그만 세운다. **크롤 루프가 그 값을 읽어 실제로 멈추는 것,
+  `run-meta.json`에 `aborted`를 쓰는 것, 중복 실행 409 거절은 전부 014B로 넘긴다.** 플래그는 지금
+  아무 동작에도 연결돼 있지 않다.
+
+**근거**: 셋을 절반만 구현하면 "중단했는데 왜 아직 `running`인가" 같은 어중간한 상태가 생긴다. 아무 효과가
+없는 상태로 명확히 남기고 014B가 한 번에 완성하는 편이 상태 불일치를 만들지 않는다.
+
+**반영**: `lib/crawler/run-manager.ts`. Task 014 DoD 5개 중 "중단 후 `status`가 `aborted`"·"서버 재시작 시
+중단된 실행으로 표시" 2개는 014B로 이월한다.
+
+### D-017 · `RunProgress.pressStatuses[].failReason`은 014A가 정형 라벨로 다듬는다
+
+- 상태: 유효
+- 결정: 7일차 · 크롤 파이프라인(Task 014A — 6일차 화면 워크스트림 리뷰 지적 반영)
+- 영향 Task: Task 014A · Task 016B(참고)
+
+**배경**: 화면 설계서 `01-crawl-run.md` §상태별 화면 ⑤는 `failReason`이 **두 단어 정형 라벨**이길
+기대한다(HTML은 `타임아웃`/`셀렉터 불일치`, RSS는 `피드 파싱 실패`/`피드 응답 없음`). 그런데
+`press-crawler.ts`·`fetchHtml`·`fetchFeed`가 만드는 문구는 자유 형식 원문이다
+(`page.goto: Timeout 30000ms exceeded.`, `목록 페이지에서 기사 링크를 찾지 못했습니다(셀렉터를 확인하세요)` 등).
+`RunProgress`를 정의하는 것이 014A라 여기서 판단해야 했다.
+
+**결정**: `run-manager.ts`에 `normalizeFailReason(press, rawError)`을 두어 언론사 전체 실패일 때
+`failReason`을 정형 라벨로 바꾸고, 원문은 `rawFailReason`(신규 필드)에 그대로 남긴다.
+- HTML: `"...링크를 찾지 못했습니다"` 포함 → `셀렉터 불일치`, 그 외 → `타임아웃`
+- RSS: `"...해석할 수 없습니다"`·`"...형식이 아닙니다"` 포함 → `피드 파싱 실패`, 그 외 → `피드 응답 없음`
+
+**근거**: `docs/CONVENTIONS.md` §7("원시 오류를 화면까지 흘리지 않는다. 경계에서 한국어 메시지로 바꾼다").
+`RunProgress`를 만드는 경계가 014A이므로 여기서 다듬지 않으면 016B가 원문을 그대로 뿌리거나 매핑을
+빠뜨린 채 넘어간다. `rawFailReason`은 근사 매핑이 틀렸을 때 원인을 추적하려고 남겼다.
+
+**한계 — 그대로 두기로 한 것 둘**:
+1. **HTML의 `타임아웃`은 근사치다.** `fetchHtml` 실패 사유에는 DNS 실패·연결 거부·인증서 오류도 있는데
+   설계서가 라벨을 둘로 못 박아 전부 `타임아웃`으로 묶였다. 세분화하려면 설계서를 늘려야 한다(화면 몫).
+2. **D-012 계약의 엣지 케이스를 수용했다.** `failures`는 "언론사 전체 실패"와 "링크가 1개였는데 그게
+   개별 실패"를 구분하지 못한다(둘 다 `articles: []` + `failures.length === 1`). `target`이 1인 드문
+   경우에만 라벨 문구가 부정확해지고 해당 언론사가 `failed`로 표시되는 결과 자체는 맞다.
+
+**반영**: `lib/types/crawl-run.ts` · `lib/crawler/run-manager.ts` · `lib/crawler/run-manager.test.ts`(회귀 8건).
+
+### D-018 · Playwright MCP 콘솔 오류 0건 판정 — 의도적으로 태운 4xx·5xx 응답 로그는 제외한다
+
+- 상태: 유효
+- 결정: 7일차 · 팀장(Task 010B 교차검증 중)
+- 영향 Task: Task 010B(반영) · **Task 025(같은 판단이 반드시 다시 필요해지는 지점)**
+
+**배경**: 010B 교차검증에서 리뷰어가 실패 케이스(존재하지 않는 피드 URL·비XML 응답)를 태울 때 콘솔에
+`Failed to load resource: the server responded with a status of 400 @ /api/press/test-source`가 찍혔다.
+이걸 콘솔 오류로 세어 fail로 잡을지 판단이 필요했다.
+
+**결정**: **의도적으로 태운 실패 케이스에서 나오는 4xx·5xx 리소스 로드 로그는 콘솔 오류 0건 판정에서
+제외한다.** 세는 것은 **런타임 예외 · React 에러 바운더리 발동 · 처리되지 않은 Promise rejection**뿐이다.
+
+**근거**:
+1. 브라우저가 실패한 네트워크 응답을 자동 기록한 것이지 앱의 JS가 던진 예외가 아니다 — 스택트레이스도
+   React 에러도 없다.
+2. 화면은 그 응답을 받아 destructive Alert를 정상적으로 그렸다(의도한 동작). 검증 실패를 400으로
+   내려주는 `fail(message, 400)` 구조(§6)를 쓰는 모든 라우트에 이미 있는 특성이라 010B만의 결함이 아니다.
+3. 이 기준이 없으면 검증 실패를 의도적으로 태우는 모든 시나리오가 걸려, **정상 동작을 결함으로 오판한다.**
+
+**Task 025로 이어지는 이유**: Task 025의 DoD가 `browser_console_messages` 에러 0건을 요구하는데, 그
+여정에는 언론사 삭제·크롤 실패 등 의도적 실패가 반드시 포함된다. 이 결정이 없으면 그 회차 담당이
+처음부터 다시 판단하거나 정상 동작을 결함으로 잡는다.

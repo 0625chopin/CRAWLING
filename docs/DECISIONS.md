@@ -716,7 +716,8 @@ runId를 `run-repository.getRun`(fs 읽기, 비동기)으로 복구해야 한다
 
 ### D-032 · `readArticle`의 "없음"·"손상" 구분은 `fs.access` 사전 확인으로 우회한다
 
-- 상태: 유효 (잠정 — I-020이 해소되면 걷어낸다)
+- 상태: **폐기**(18일차, 저장소 계층 — I-020이 완전 해소되어 이 우회를 걷어냈다. 아래 결정 내용은
+  10일차 시점의 기록으로 남긴다)
 - 결정: 10일차 · 저장소 계층(Task 017)
 - 영향 Task: Task 017(반영) · Task 007(잠재 수정 대상)
 - 관련 이슈: **I-020**
@@ -738,6 +739,14 @@ runId를 `run-repository.getRun`(fs 읽기, 비동기)으로 복구해야 한다
 이 try/catch에 걸려 404가 된다 — 그게 **I-021**(경로 순회 시도의 상태 코드가 라우트마다 갈린다)의 한쪽
 사례다. 전용 `ArticleNotFoundError`(I-020)와 `UnsafePathSegmentError`(I-021)가 도입되면 이 우회는 함께
 걷어낸다.
+
+**걷어냄(18일차, 저장소 계층)**: 전용 타입 둘이 모두 도입된 뒤(`ArticleNotFoundError` — I-020,
+`UnsafePathSegmentError` — I-021·D-045) 위에서 예고한 대로 `fs.access` 사전 확인과 그 위의
+`try/catch`를 걷어냈다. 이제 `readArticle` 호출 하나를 감싸는 `catch`가 `UnsafePathSegmentError` →
+400, `ArticleNotFoundError` → 404 순으로 가리고 그 외는 그대로 던져 `withErrorBoundary`가 500으로
+받는다. **판정 순서가 중요하다** — `UnsafePathSegmentError`를 먼저 가려내지 않으면 경로 순회
+입력이 "없는 기사"로 뭉뚱그려진다(이 우회가 살아 있을 때 실제로 그랬던 증상, I-021 참고). 실측은
+I-020 "완전 해소" 블록에 남겼다.
 
 ### D-033 · `analyzeRun`은 `{ file, skippedArticleCount }`를 반환하고 `lib/keyword/index.ts` 배럴을 거치지 않는다
 
@@ -1087,3 +1096,57 @@ index.ts, press-crawler.ts}` 4건을 추가해야 범위가 맞다. **최종 판
 
 **회귀 테스트**: 실제 관측된 제목 문자열과 이중 이스케이프 케이스를 `lib/crawler/rss.test.ts`에 넣었다.
 **그 테스트가 실제로 회귀를 잡는지도 확인했다** — 화면이 치환 순서를 일부러 뒤집자 14건 중 그 1건만 실패했다.
+
+### D-047 · 손상된 파일은 값으로 격리하되 로그로 드러내고, 원인별 예외 타입은 두지 않는다
+
+- 상태: 유효
+- 결정: 18일차 · **크롤 파이프라인**(I-006·I-020 처리 중) · 화면·저장소 계층이 교차검증으로 확인
+- 영향 Task: Task 007(`lib/storage/article-repository.ts`·`run-repository.ts`) · Task 017
+
+**결정 ①: 손상 파일을 건너뛰되 `console.warn`으로 남긴다. 화면은 바꾸지 않는다.**
+
+`listRuns`·`listArticles`는 파일 1건이 깨져도 목록 전체가 무너지지 않게 값으로 격리한다
+(`docs/CONVENTIONS.md` §7). **문제는 그 사실이 아무 데도 안 남아 사용자가 왜 사라졌는지 알 수 없다는
+것이었다** — 수정 전 두 곳 다 `catch { return null }`로 **파싱 실패·읽기 실패·권한 오류를 전부 뭉뚱그리고
+로그가 전무했다.**
+
+로그 형식은 새로 만들지 않고 `lib/keyword/analyze-run.ts`가 이미 쓰던 **`[모듈파일명] 설명: 대상`** 을
+따르고, 두 번째 인자로 원본 `error`를 넘긴다. 형식을 새로 만들면 로그가 파편화된다.
+
+`console.error`가 아니라 `console.warn`인 이유: `withErrorBoundary`의 `console.error`는 **라우트 경계에서
+미분류 예외를 처리하는 자리**다. 이번 건은 예외가 아니라 "목록에서 값 하나를 조용히 뺀다"는 값 격리이고,
+`analyze-run.ts`가 이미 같은 성격에 `warn`을 쓰고 있어 격을 맞춘다.
+
+**화면은 건드리지 않는다** — 설계서에 "N건 숨겨짐" 같은 UI가 없다. 3일차 리뷰어 권고 그대로다.
+
+**결정 ②: 원인별로 분기하지 않는다.** ENOENT든 JSON 파싱 실패든 스키마 불일치든 **"이 항목 1건은 건너뛴다"는
+같은 처리로 이어진다.** 원인 구분은 로그의 두 번째 인자로 충분하다. §7("조용히 덮어쓰지 않는다")은 "삼키지
+말고 드러내라"는 뜻이지 "원인별로 분기하라"는 뜻이 아니다.
+
+**결정 ③: "없음"에는 전용 타입을 두고, "손상"에는 두지 않는다.**
+
+`readArticle`의 ENOENT 분기가 **`ArticleNotFoundError`** 로 던진다(`RunNotFoundError`/D-022와 같은 형태 —
+생성자가 라벨이 아니라 도메인 값을 받고, `super()`로 한국어 메시지를 만들고, `this.name`을 설정한다).
+
+**손상 쪽에 전용 타입을 두지 않은 근거**: ① `withErrorBoundary`가 이미 미분류 예외를 `console.error` + 500
+정형 메시지로 처리해 §7을 충족한다. ② 라우트가 필요한 판정은 **"없음(404) vs 그 외 전부(500)" 하나뿐**이라
+세분화된 타입의 소비처가 없다. 타입을 늘리는 쪽이 항상 옳은 것은 아니다 — **두 번째 소비처가 생기면 그때
+쪼갠다.**
+
+**결정 ④: D-032의 `fs.access` 우회를 걷어낸다.** 전용 타입이 생겨 `instanceof`로 갈 수 있게 됐으므로
+존재 확인용 파일 시스템 호출이 필요 없다. **두 겹이던 `try/catch`가 한 겹으로 줄고 새 복잡도는 들어오지
+않았다.**
+
+**우회를 걷어낸 뒤에도 세 갈래가 그대로 갈린다**(세 워크스트림이 각자 `curl`로 독립 실측):
+
+| 상황 | 타입 | 응답 |
+| --- | --- | --- |
+| 경로 순회 입력 | `UnsafePathSegmentError` (D-045) | **400** |
+| 정상 형식·없는 기사 | `ArticleNotFoundError` | **404** |
+| 메타 라인 손상 | 익명 `Error` | **500** (`withErrorBoundary`) |
+
+**판정 순서에 대하여**: 라우트의 `catch`는 `UnsafePathSegmentError`를 먼저 가려내지만, **현재 코드에서
+순서가 결과를 바꾸는 입력은 없다.** `articlePath()`가 인자 평가 시점에 동기적으로 `assertSafeSegment`를
+거치므로, 세그먼트가 안전하지 않으면 `fs.readFile`이 호출되기도 전에 던져져 ENOENT가 날 기회가 없다 —
+두 예외는 상호 배타적이다. **`runId`·`articleId` 둘 다 순회 문자를 넣은 실측에서 `runId` 형식 오류가
+나오는 것으로 이 구조를 확인했다.** 순서를 유지하는 것은 방어적 선택이다.

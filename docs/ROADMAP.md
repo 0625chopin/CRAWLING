@@ -1,6 +1,6 @@
-# IT/AI 뉴스 핫 키워드 크롤러 — 개발 로드맵
+# 뉴스 핫 키워드 크롤러 — 개발 로드맵
 
-체크박스로 고른 언론사에서 IT/AI 기사를 긁어 txt로 모으고, Kiwi 형태소 분석으로 조사를 걷어낸 뒤 빈도를 세어 **핫 키워드 랭킹**을 뽑는 로컬 단일 사용자 테스트 도구를 완성하기 위한 실행 계획서입니다.
+체크박스로 고른 언론사에서 기사를 긁어 txt로 모으고, Kiwi 형태소 분석으로 조사를 걷어낸 뒤 빈도를 세어 **핫 키워드 랭킹**을 뽑는 로컬 단일 사용자 테스트 도구를 완성하기 위한 실행 계획서입니다. 수집 대상은 **IT/AI·엔터·스포츠·경제·증권** 다섯 카테고리이며, 언론사마다 카테고리를 하나씩 지정한다(21일차 확장).
 
 - 요구사항 원본: [`docs/PRD.md`](./PRD.md)
 - 형태소 분석 실측 검증: [`docs/kiwi-verification.md`](./kiwi-verification.md)
@@ -46,7 +46,11 @@
 | **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 2 | ✅ 완료 |
 | **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 4 | ✅ 완료 |
 | **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 3 | ✅ 완료 |
-| **합계** | | **25** | **25** | **100%** |
+| **Phase 7** | 수집 카테고리 확장 (MVP 완료 후 신규 요청) `F001` `F004` `F006` `F007` | 3 (026–028) | 3 | ✅ 완료 |
+| **합계** | | **28** | **28** | **100%** |
+
+**Phase 0~6이 MVP(Task 001–025)이고, Phase 7은 MVP가 닫힌 뒤 사용자 요청으로 열린 확장이다.** 원래 계획이
+28개였던 것으로 읽지 않도록 나눠 둔다.
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -822,6 +826,96 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
   - [x] 25개 Task가 전부 완료 판정을 받아, **회차 마감에 팀장이 진행률 요약 표를 25/25로 갱신할 수 있는 상태**다(표를 고치는 것은 이 Task가 아니다 — §작업 진행 규칙 4). — 001~024가 전부 `[x]`인 상태에서 025가 마지막으로 닫혔다.
 
 **Phase 6 완료 기준 (Exit Criteria)** — MVP 완료. PRD의 F001~F008이 모두 화면에서 동작하고, 임시 코드와 문서 불일치가 남아 있지 않다.
+
+---
+
+## Phase 7: 수집 카테고리 확장 ✅
+
+> **이 Phase는 MVP 계획의 일부가 아니다.** Phase 0~6(Task 001~025)이 전부 완료되어 MVP가 닫힌 뒤,
+> 사용자 요청("IT/AI만이 아니라 설정에 따라 엔터·스포츠·경제·증권도 수집하게 해 달라, 언론사도 더 늘려 달라,
+> `/results`·`/keywords`에도 반영해 달라")으로 21일차에 새로 열린 **기능 확장**이다.
+> 원래 계획이 28개 Task였던 것으로 읽지 않도록 Phase를 나눠 둔다.
+
+### Task 026 · 카테고리 도메인 도입과 조회 · 분석 API 확장
+
+- [x] 완료 (21일차, 2026-08-11) &nbsp;|&nbsp; 기능 ID: `F004` `F006` `F007` 확장 &nbsp;|&nbsp; 선행: Task 022 (MVP 완료 이후)
+- **참조**: `docs/CONVENTIONS.md` §3 식별자·타입 규칙, `docs/ISSUES.md` **I-022**·**I-040**·**I-050**(하위호환 함정)
+- **생성/수정 파일**: `lib/types/press.ts` · `lib/types/article.ts` · `lib/storage/press-repository.ts` ·
+  `app/api/press/route.ts` · `app/api/press/[id]/route.ts` · `app/api/runs/[runId]/articles/route.ts` ·
+  `app/api/runs/[runId]/keywords/route.ts` · `lib/api/{query-params,article-category-filter}.ts`(신규) ·
+  `lib/keyword/{analyze-run,keywords-response}.ts` · `lib/api/{press,run,keyword}-client.ts`
+- **결과물**: 카테고리 5종(`it-ai` `entertainment` `sports` `economy` `stock`) `z.enum`과 한국어 표시명
+  단일 소스 `PRESS_CATEGORY_LABELS`. `?category=` 반복 파라미터 필터를 세 라우트에 공통 헬퍼로 추가.
+  카테고리 필터로 제외된 "카테고리 미상" 기사 수를 `uncategorizedCount`로, 필터 적용 **전** 원본 기사 수를
+  `sourceArticleCount`로 응답에 실어 화면이 "결과 0건"의 원인을 구분할 수 있게 했다(**D-050**·**D-051**·**D-052**).
+- **남긴 한계**: **I-053** — 카테고리 필터가 걸리면 `keywords.json` 캐시를 우회하고 매 요청 재집계한다.
+  지금 데이터 양에서는 체감되지 않지만 화면이 필터를 상시로 걸면 재검토가 필요하다.
+- **구현 규칙**
+  - **새 필드는 예외 없이 zod 선택 필드 + 기본값이다.** 필수로 두면 이 필드가 생기기 전의
+    `press-sources.json`·`run-meta.json`이 스키마에서 떨어지고, `listRuns`가 그 예외를 삼켜 해당 run이
+    목록에서 통째로 사라진다(I-022·I-040·**D-026**에서 실제 코드 경로로 확인된 함정).
+  - ⚠️ **`Press.category`는 기본값 `'it-ai'`, `Article.category`는 기본값을 두지 않는다.** 전자는 "값이 없다"가
+    실제로 IT/AI라는 사실과 일치하지만, 후자는 크롤 시점 스냅샷이라 "아직 아무도 기록하지 않았다(미상)"는
+    뜻이다 — 기본값을 넣으면 과거 기사가 거짓 확정된다(**D-050**).
+  - ⚠️ **카테고리 필터가 걸리면 "미상"은 제외한다.** 통과시키면 과거 기사가 영원히 모든 필터에 새어 들어가
+    「스포츠」 랭킹에 IT 키워드가 섞여도 사용자가 알아챌 수 없다(**D-051**).
+- **완료 조건 (DoD)**
+  - [x] 카테고리 키가 없는 기존 `data/press-sources.json` 5곳이 그대로 파싱되고 전부 `it-ai`가 된다. — 실제 파일로 확인.
+  - [x] `?category=` 필터가 세 라우트에서 동작하고, 잘못된 값은 400 + 필드별 한국어 메시지를 준다. — curl 실측.
+  - [x] `npm run lint` · `typecheck` · `test` 통과. — 회차 마감 게이트에서 재확인.
+
+### Task 027 · 카테고리 단위 수집과 언론사 확충
+
+- [x] 완료 (21일차, 2026-08-11) &nbsp;|&nbsp; 기능 ID: `F001` `F003` 확장 &nbsp;|&nbsp; 선행: Task 026
+- **참조**: `docs/press-candidates.md`(실물 검증 자산 · §재현 방법), `docs/ISSUES.md` **I-037**(빈 시드는 설계다)
+- **생성/수정 파일**: `lib/types/crawl-run.ts` · `lib/storage/run-repository.ts` · `lib/storage/article-file.ts` ·
+  `lib/crawler/press-crawler.ts` · `lib/crawler/run-manager.ts` · `app/api/crawl/route.ts` · `docs/press-candidates.md`
+- **결과물**: `CrawlRun.targetCategories` 스냅샷과 기사 txt의 `# category:` 메타 라인. 카테고리로 대상을
+  고르는 크롤 실행 경로(`crawlStartRequestSchema.categories`, **D-053**·**D-054**·**D-055**).
+  **엔터·스포츠·경제·증권 각 3곳씩 12곳을 실물 HTTP로 확인해 등록**했다(기존 IT/AI 5곳 포함 총 17곳).
+- **남긴 한계**: **I-054** — `press-defaults.ts` 시드는 비운 채로 뒀다(I-037의 빈 상태 설계 유지). 그 결과
+  완전 초기 상태에서는 17곳을 손으로 입력해야 한다. 시드로 깔지 가져오기 기능으로 풀지는 다음 회차에 화면
+  워크스트림과 함께 정한다.
+- **구현 규칙**
+  - **`docs/press-candidates.md`에는 실제로 두드려 본 결과만 적는다.** 응답 코드·인코딩·아이템 수를 실측값으로
+    남기고, 죽은 후보는 제외 사유와 함께 기록한다. RSS 우선, HTML은 셀렉터가 잘 깨지므로 카테고리당 최대 1곳.
+  - ⚠️ **기사 txt는 사용자가 직접 열어 보는 파일이다.** 메타 라인은 "있을 때만 한 줄 추가"로 확장하고,
+    그 줄이 없는 기존 파일이 그대로 읽혀야 한다(왕복 테스트 양쪽 필수).
+- **완료 조건 (DoD)**
+  - [x] 카테고리 줄이 없는 기존 기사 txt가 그대로 읽힌다. — 왕복 테스트 + 실물 대조(과거 run 0/6, 신규 run 13/13).
+  - [x] `targetCategories` 키가 없는 과거 `run-meta.json`이 파싱되고 `listRuns`에서 사라지지 않는다.
+  - [x] 네 카테고리 각 3곳 이상이 실측값과 함께 문서에 남고, 그 URL이 실제로 살아 있다. — 교차검증이 4곳 재확인.
+  - [x] 새 언론사로 실제 크롤을 1회 돌려 기사가 저장되고 카테고리가 파일에 들어간다. — run `20260811-075740`, 13/15건.
+
+### Task 028 · 네 화면에 카테고리 반영
+
+- [x] 완료 (21일차, 2026-08-11) &nbsp;|&nbsp; 기능 ID: `F001` `F004` `F006` `F007` 확장 &nbsp;|&nbsp; 선행: Task 026
+- **참조**: `docs/screens/README.md` · `00-app-shell.md` · `01-crawl-run.md` · `02-collect-result.md` ·
+  `03-hot-keyword.md` · `04-press-manage.md`
+- **생성/수정 파일**: `components/common/category-filter.tsx`(신규) · `components/{press,crawl,results,keywords}/` ·
+  `app/{page,press/page,results/page,keywords/page}.tsx` · `app/layout.tsx` ·
+  `components/layout/site-header.tsx` · `docs/screens/*.md`
+- **결과물**: `/press` 카테고리 입력·뱃지·필터, `/` 언론사 선택 카드의 카테고리 그룹핑과 그룹 단위 선택,
+  `/results` 「대상 카테고리」(실행 스냅샷)와 「카테고리 필터」(현재 표시 범위)를 구조로 분리, `/keywords`
+  카테고리 필터와 **"결과 0건"의 세 원인을 가르는 안내**. 앱 제목을 `IT/AI 뉴스 핫 키워드 크롤러` →
+  `뉴스 핫 키워드 크롤러`로 정정.
+- **구현 규칙**
+  - **한국어 카테고리 라벨을 화면에서 직접 타이핑하지 않는다.** `PRESS_CATEGORY_LABELS`를 import한다 —
+    화면마다 '엔터'/'엔터테인먼트'로 갈리면 안 된다.
+  - ⚠️ **값이 없는 것을 있는 것처럼 그리지 않는다.** `targetCategories`가 빈 배열이면 그 행 자체를
+    렌더링하지 않는다 — 「전체」나 5종 나열로 채우면 "안 걸렀다"를 "전부가 대상이었다"로 지어내는 것이다.
+  - ⚠️ **"결과 0건"의 원인마다 해법이 다르다.** 원본 0건 · 카테고리 미상 제외 · 카테고리 불일치 세 갈래를
+    가르지 않으면 "최소 등장 횟수를 낮추라"는 **틀린 해법**을 안내하게 된다.
+- **완료 조건 (DoD)**
+  - [x] `/press`에서 카테고리를 골라 등록하고 목록 뱃지·필터가 동작한다. — Playwright 동선.
+  - [x] `/`에서 언론사가 카테고리로 묶이고 그룹 단위 선택/해제가 동작한다. — Playwright 동선(3단 상태 포함).
+  - [x] `/results`·`/keywords`에서 카테고리로 좁혀지고 제외 건수가 안내된다. — Playwright 동선.
+  - [x] 하드코딩 색상 0건, 라이트·다크 양쪽 정상, `PRESS_CATEGORY_LABELS` 단일 소스 준수. — 교차검증이 grep 전수 확인.
+  - [x] `npm run lint` · `typecheck` · `build` 통과. — 회차 마감 게이트에서 재확인.
+
+**Phase 7 완료 기준 (Exit Criteria)** — 다섯 카테고리를 언론사마다 지정할 수 있고, 크롤 실행 · 수집 결과 ·
+핫 키워드 세 화면이 모두 카테고리에 따라 동작한다. 카테고리가 요청 → 크롤 → 파일 → 조회 → 분석까지
+관통하는 것을 실제 실행으로 확인했다.
 
 ---
 

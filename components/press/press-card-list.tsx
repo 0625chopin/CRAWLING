@@ -5,10 +5,12 @@ import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { SourceTypeBadge } from '@/components/press/source-type-badge'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { updatePressActive, type PressSourceWithUrl } from '@/lib/api/press-client'
+import { PRESS_CATEGORY_LABELS } from '@/lib/types/press'
 
 export interface PressCardListProps {
   pressList: PressSourceWithUrl[]
@@ -59,9 +61,10 @@ export function PressCardList({
         return (
           <Card key={press.id} className="p-4">
             <div className="flex items-start justify-between gap-2">
-              <h2 className="flex items-center gap-2 font-medium">
+              <h2 className="flex flex-wrap items-center gap-2 font-medium">
                 {press.name}
                 <SourceTypeBadge sourceType={press.sourceType} />
+                <Badge variant="outline">{PRESS_CATEGORY_LABELS[press.category]}</Badge>
               </h2>
               <div className="flex items-center gap-2">
                 <Switch

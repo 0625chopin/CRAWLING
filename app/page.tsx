@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { PageContainer } from '@/components/common/page-container'
@@ -9,6 +9,7 @@ import { CrawlRunPanel } from '@/components/crawl/crawl-run-panel'
 import { PressSelectCard, type PressListLoadState } from '@/components/crawl/press-select-card'
 import { fetchActivePressList, startCrawl } from '@/lib/api/crawl-client'
 import type { PressSourceWithUrl } from '@/lib/api/press-client'
+import type { PressCategory } from '@/lib/types/press'
 
 /** 화면 설계서 01 §크롤링 옵션 노출 범위 결정 — 서버 기본값과 동일하게 맞춘 안내용 초깃값. */
 const DEFAULT_MAX_ARTICLES = '20'
@@ -59,6 +60,32 @@ export default function CrawlRunPage() {
     [pressList]
   )
 
+  /** 카테고리 헤더의 전체 선택/해제(Task 028) — 그 카테고리에 속한 언론사만 선택 Set에 더하거나 뺀다. */
+  const handleToggleCategory = useCallback(
+    (category: PressCategory, nextChecked: boolean) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        for (const press of pressList) {
+          if (press.category !== category) continue
+          if (nextChecked) next.add(press.id)
+          else next.delete(press.id)
+        }
+        return next
+      })
+    },
+    [pressList]
+  )
+
+  // 진행 패널이 pressId만 갖고 있는 pressStatuses에서 카테고리를 보여줄 수 있도록 만든 조회용
+  // 맵이다(Task 028 — "어느 카테고리를 수집 중인지 진행 패널에도 드러낸다"). RunProgress·CrawlRun
+  // 스키마(크롤 파이프라인 소유)에는 카테고리가 없으므로 화면이 이미 들고 있는 pressList에서
+  // 클라이언트 쪽으로 join한다 — 저장소·크롤 파이프라인 타입을 건드리지 않는다.
+  const categoryByPressId = useMemo(() => {
+    const map = new Map<string, PressCategory>()
+    for (const press of pressList) map.set(press.id, press.category)
+    return map
+  }, [pressList])
+
   const isRunning = runId !== null
   const isPressEmpty = loadState === 'ready' && pressList.length === 0
 
@@ -106,6 +133,7 @@ export default function CrawlRunPage() {
           selectedIds={selectedIds}
           onToggleOne={handleToggleOne}
           onToggleAll={handleToggleAll}
+          onToggleCategory={handleToggleCategory}
           onRetry={retry}
           disabled={isRunning || isStarting}
         />
@@ -121,6 +149,7 @@ export default function CrawlRunPage() {
           onMaxArticlesPerPressChange={setMaxArticlesPerPress}
           onStart={handleStart}
           onReset={handleReset}
+          categoryByPressId={categoryByPressId}
         />
       </div>
     </PageContainer>

@@ -341,3 +341,139 @@ RSS 경로는 피드 XML 1회 요청으로 기사 목록이 끝나므로 **`cont
 - **ZDNet 목록 페이지의 고유 링크가 23개인 이유(24개 중 1건 중복)는 파악하지 않았다.** 같은 기사가 목록 상단에
   한 번 더 노출된 것으로 보이지만 단정할 근거는 없다. **크롤러 쪽에서 URL 중복 제거를 하면 되는 문제**라
   더 파고들지 않았다.
+
+---
+
+## 카테고리 확장 후보 조사 — 엔터·스포츠·경제·증권 (Task 027, 21일차)
+
+**확인 일자: 2026-08-11.** Task 026(저장소 계층)이 `Press.category`(`it-ai`·`entertainment`·`sports`·
+`economy`·`stock`)를 도입하면서, 지금까지 IT/AI 전용이던 이 표에 나머지 4개 카테고리 후보를 더한다.
+측정 환경은 위 §확인 일자와 동일(Windows 11 · Node v24.19.0 · `fetch` + `fast-xml-parser` 5.10.1). 재현
+방법은 위 §재현 방법을 그대로 따른다.
+
+**RSS 우선 원칙(팀장 지시)을 그대로 지켰다** — 4개 카테고리 12곳 전부 RSS이고 HTML 방식은 0곳이다(카테고리당
+상한 1곳 조건에 여유 있게 들어온다). 아래에 적히지 않은 죽은 URL(404·의심스러운 리다이렉트)은 「죽은 후보」
+절에 그 사실만 남기고 표에서 뺐다 — 있지도 않은 값으로 채우지 않는다.
+
+### 후보 표
+
+「요약 평균」은 기존 표와 같은 방식으로 쟀다 — `description`에서 태그·CDATA·엔티티를 걷어내고 공백을 접은
+글자 수, `fast-xml-parser`로 실제 파싱한 값이다. 전부 UTF-8이라 이번에는 EUC-KR 디코딩 이슈가 없었다.
+
+| 카테고리 | 매체 | URL | 인코딩 | 아이템 수 | 요약 평균(범위) | 날짜 태그 | 확인 결과 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 엔터 | **연합뉴스 연예** | `https://www.yna.co.kr/rss/entertainment.xml` | UTF-8(`application/xml;charset=UTF-8`) | 120건 | 76.1자(40~83) | `<pubDate>` RFC 822 | 200 OK |
+| 엔터 | **SBS 방송/연예** | `https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=14&plink=RSSREADER` | UTF-8(`text/xml;charset=UTF-8`) | 29건 | 204.2자(81~415) | `<pubDate>` RFC 822 | 200 OK. `robots.txt`가 이 RSS 엔드포인트를 자체 사이트맵 목록에 올려 둘 만큼 개방적 |
+| 엔터 | **스포츠경향 연예** | `https://sports.khan.co.kr/rss/entertainment` | UTF-8(`application/xml; charset=UTF-8`) | 30건 | 203자(203~203, 300자 근방에서 균일 절단) | `<dc:date>` ISO 8601 | 200 OK — robots.txt 주의(아래 별도 항목) |
+| 스포츠 | **연합뉴스 스포츠** | `https://www.yna.co.kr/rss/sports.xml` | UTF-8 | 120건 | 69.6자(6~83) | `<pubDate>` RFC 822 | 200 OK |
+| 스포츠 | **SBS 스포츠** | `https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=09&plink=RSSREADER` | UTF-8 | 29건 | 102.8자(63~600) | `<pubDate>` RFC 822 | 200 OK |
+| 스포츠 | **스포츠경향 스포츠종합** | `https://sports.khan.co.kr/rss/sports-all` | UTF-8 | 30건 | 203자(균일 절단) | `<dc:date>` ISO 8601 | 200 OK — robots.txt 주의 |
+| 경제 | **연합뉴스 경제** | `https://www.yna.co.kr/rss/economy.xml` | UTF-8 | 120건 | 73.5자(1~83) | `<pubDate>` RFC 822 | 200 OK |
+| 경제 | **SBS 경제** | `https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=02&plink=RSSREADER` | UTF-8 | 29건 | 85.3자(63~147) | `<pubDate>` RFC 822 | 200 OK |
+| 경제 | **아시아경제 경제** | `https://view.asiae.co.kr/rss/economy.htm` | UTF-8 | 100건 | 232.3자(37~279) | `<pubDate>` | 200 OK |
+| 증권 | **아시아경제 증권** | `https://view.asiae.co.kr/rss/stock.htm` | UTF-8 | 100건 | 224.5자(0~252) | `<pubDate>` | 200 OK. **일부 항목은 요약이 0자**(빈 `<description/>`) — 그 항목만 개별 실패(50자 미달)로 걸러진다, 언론사 전체 실패가 아니다 |
+| 증권 | **이투데이 마켓** | `https://rss.etoday.co.kr/eto/market_news.xml` | UTF-8 | 10건(발행 주기상 적음) | 72.8자(69~85) | `<pubDate>` RFC 822 | 200 OK. 같은 도메인의 `eto/economy_news.xml`은 확인 시점에 **0건**(§죽은 후보) |
+| 증권 | **인포스탁데일리 전체기사** | `https://www.infostockdaily.co.kr/rss/allArticle.xml` | UTF-8(`application/xml`, charset 헤더 없음·XML 선언은 `utf-8`) | 50건 | 299.8자(299~300, 300자 절단) | `<pubDate>` **비표준**(`2026-08-11 07:44:37`, 타임존 없음) | 200 OK. 매체 자체가 증권/투자 전문지라 "전체기사" 피드가 곧 증권 뉴스다 |
+
+### `sports.khan.co.kr` robots.txt 주의(팀장 결정 D-XXX와 같은 판단 기준 적용)
+
+```
+User-agent: AhrefsBot
+User-agent: SemrushBot
+User-agent: ClaudeBot
+User-agent: GPTBot
+User-agent: ChatGPT-User
+User-agent: Google-Extended
+User-agent: Bytespider
+Disallow: /
+User-agent: *
+Disallow: /search/
+Disallow: /news/page/
+Disallow: /*enlarge_image_worldcup.html
+```
+
+이름이 붙은 봇(ClaudeBot 포함)을 전면 차단하지만 **`*`는 `/search/`·`/news/page/` 등 일부 경로만 막고 RSS·
+기사 경로는 열려 있다** — 위 §크롤링 예의에서 블로터가 `GPTBot`·`Slurp`를 이름으로 막고도 `*`가 열려 있어
+채택된 것과 **정확히 같은 구조**다. 이 도구의 `CRAWL_USER_AGENT`는 일반 Chrome UA이고 어떤 봇 이름도
+사칭하지 않으므로(§크롤링 예의 "특정 봇 이름을 사칭하지 않는다"), `*`에 허용된 범위 안에서 스포츠경향을
+쓰는 것은 그 원칙과 어긋나지 않는다. 다만 이름이 명시적으로 AI 크롤러를 겨냥한 목록(ClaudeBot·GPTBot·
+Google-Extended·Bytespider가 한 그룹)이라는 점은 기록해 둔다 — 이후 이 언론사의 `*` 규칙이 좁아지면
+가장 먼저 재검토해야 할 후보다.
+
+### 나머지 robots.txt 확인 결과
+
+| 도메인 | `User-agent: *` | 비고 |
+| --- | --- | --- |
+| `yna.co.kr` | `Allow:/` | `/view/AEN*` 등 통신사 배포용 경로만 일부 차단, RSS·일반 기사 무관 |
+| `news.sbs.co.kr` | `Allow: /*` | 가장 개방적 — RSS 엔드포인트 자체를 `Sitemap:` 목록에 올려 둠 |
+| `view.asiae.co.kr` | `Disallow: /search /realtime /photo/photo_list.htm`(그 외 허용) | RSS·기사 경로 무관 |
+| `rss.etoday.co.kr`(`etoday.co.kr`) | `Allow: /` | 제한 없음 |
+| `infostockdaily.co.kr` | `Disallow: /admin/` | 제한 없음(RSS·기사 경로 무관) |
+
+`*` 대상 `Crawl-delay`를 선언한 곳은 여기서도 없다 — 위 §요청 제한의 프로젝트 기본값(지연 500ms·동시성
+2)을 그대로 쓴다.
+
+### 죽은 후보 (문서에 남기되 표에는 넣지 않음)
+
+두드려 봤지만 쓸 수 없었던 후보를 그대로 남긴다 — 조용히 빼면 다음 회차가 같은 URL을 다시 두드린다.
+
+| 후보 | URL | 결과 |
+| --- | --- | --- |
+| 스포츠서울 | `sportsseoul.com/rss/allArticle.xml` | 404 응답 본문에 출처 불명의 외부 로더 스크립트(`html-load.com`)가 삽입돼 있다 — 단순 404가 아니라 도메인 자체가 의심스러운 상태라 후보에서 완전히 제외했다 |
+| 한국경제(전 섹션: 연예·스포츠·경제·증권) | `hankyung.com/feed/{entertainment,sports,economy,finance}` | 전부 200 OK지만 **`<description>` 태그 자체가 없다**(기존 표의 "한국경제 IT" `0자` 사례와 동일 패턴) — `contentSelector` 없이는 모든 기사가 50자 미달로 실패해 전멸한다. 실제 셀렉터를 조사하지 않아 이번 배정에서는 후보에서 뺐다 |
+| 서울경제(경제·금융·마켓시그널) | `sedaily.com/rss/{economy,finance,market}` | 전부 200 OK지만 한국경제와 같은 이유로 `<description>` 없음 |
+| 이투데이 경제 | `rss.etoday.co.kr/eto/economy_news.xml` | 200 OK이지만 확인 시점 **`<item>` 0건** — 죽은 URL은 아니나 지금 당장은 쓸 수 없어 「이투데이 마켓」으로 대체했다 |
+| OSEN·텐아시아·스타뉴스·마이데일리·뉴스1·뉴스핌·뉴시스·조선비즈·헤럴드경제biz·파이낸셜뉴스 | 각 매체 추정 RSS 경로 다수 | 404 또는 HTML 안내 페이지로 리다이렉트 — 짧은 시간 안에 정확한 엔드포인트를 찾지 못했다. 후보가 더 필요해지면 각 사이트의 `/rss` 안내 페이지를 먼저 열어 실제 경로를 확인한다(이번 조사에서 `hankyung.com/feed`·`sedaily.com/rss`·`asiae.co.kr/rss/`처럼 안내 페이지를 먼저 여는 방식이 맹목적 URL 추정보다 훨씬 잘 맞았다) |
+| `khan.co.kr`(경향신문 본지, `sports.khan.co.kr`와 다른 도메인) | `khan.co.kr/rss` | 403 — 별도 봇 차단으로 보이나 원인을 더 파고들지 않았다 |
+
+### 왜 이 12곳을 골랐는가
+
+- **RSS 우선**: HTML 방식은 셀렉터가 쉽게 깨지고(§표에서 놓치면 안 되는 것 참고) 조사 시간도 많이 든다.
+  12곳 전부 RSS라 이번 조사에서 HTML 후보를 아예 만들지 않았다 — 상한(카테고리당 최대 1곳)을 넘길 이유가
+  없었다.
+- **한국경제·서울경제를 뺀 이유**: 두 매체는 사실상 전 섹션에서 `<description>`을 아예 안 준다. IT/AI
+  카테고리에서 이미 같은 문제가 확인된 매체(§후보 표 "한국경제 IT" 행, "요약만 경로로는 쓸 수 없다")라
+  일관된 판단이다. `contentSelector`를 붙여 본문 전문 경로로 쓸 수는 있지만, 그러려면 원문 페이지 셀렉터를
+  실측해야 하는데 이번 조사 범위(카테고리당 최소 3곳 확보) 안에서는 다른 대안이 이미 충분했다.
+- **연합뉴스·SBS를 3개 카테고리씩 재사용한 이유**: 언론사 자체는 재사용해도 **Press 레코드는 카테고리마다
+  별개**다(`docs/CONVENTIONS.md` — "언론사 1곳 = 카테고리 1개", `lib/types/press.ts` 주석). 두 매체 모두
+  섹션별 RSS가 이미 잘 갖춰져 있고 요약 품질도 일관되게 좋아, 카테고리마다 다른 매체를 억지로 찾기보다
+  검증된 소스를 반복 활용하는 쪽이 안정적이라고 판단했다. 다만 「3곳」의 취지(서로 다른 언론사 확보)를
+  지키기 위해 매 카테고리마다 **연합뉴스·SBS 외에 최소 1곳은 완전히 다른 매체**(스포츠경향/아시아경제/
+  인포스탁데일리)를 넣었다.
+
+### `data/press-sources.json` 추가분 — 등록 방법과 id
+
+기존 5곳(§`data/press-sources.json` 시드 예시)을 지우지 않고 아래 12곳을 더한다. `POST /api/press`로
+등록했다(파일을 손으로 편집하지 않음 — 스키마 검증을 거치는 쪽이 안전하다는 팀장 권고를 따랐다).
+
+| id | name | category | feedUrl |
+| --- | --- | --- | --- |
+| `yna-entertainment` | 연합뉴스 연예 | entertainment | `https://www.yna.co.kr/rss/entertainment.xml` |
+| `sbs-entertainment` | SBS 연예 | entertainment | `https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=14&plink=RSSREADER` |
+| `khan-entertainment` | 스포츠경향 연예 | entertainment | `https://sports.khan.co.kr/rss/entertainment` |
+| `yna-sports` | 연합뉴스 스포츠 | sports | `https://www.yna.co.kr/rss/sports.xml` |
+| `sbs-sports` | SBS 스포츠 | sports | `https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=09&plink=RSSREADER` |
+| `khan-sports` | 스포츠경향 스포츠 | sports | `https://sports.khan.co.kr/rss/sports-all` |
+| `yna-economy` | 연합뉴스 경제 | economy | `https://www.yna.co.kr/rss/economy.xml` |
+| `sbs-economy` | SBS 경제 | economy | `https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=02&plink=RSSREADER` |
+| `asiae-economy` | 아시아경제 경제 | economy | `https://view.asiae.co.kr/rss/economy.htm` |
+| `asiae-stock` | 아시아경제 증권 | stock | `https://view.asiae.co.kr/rss/stock.htm` |
+| `etoday-market` | 이투데이 마켓 | stock | `https://rss.etoday.co.kr/eto/market_news.xml` |
+| `infostock-daily` | 인포스탁데일리 | stock | `https://www.infostockdaily.co.kr/rss/allArticle.xml` |
+
+전부 `sourceType: "rss"`이고 `contentSelector`는 비웠다(요약만 경로 — 12곳 모두 요약 평균이 50자 하한을
+넉넉히 넘는다).
+
+**`lib/storage/press-defaults.ts`의 `DEFAULT_PRESS_SOURCES`는 채우지 않았다.** 21일차에 이 12곳으로
+채우는 안을 검토했지만 팀장이 기각했다 — `DEFAULT_PRESS_SOURCES`가 빈 배열인 것은 누락이 아니라
+**`I-037`**(`docs/ISSUES.md` — "언론사 0건에서 시작하도록 의도한 빈 배열", 화면 설계서 04의 빈 상태
+전제를 코드화한 것)이 15일차에 "결함 아님"으로 확정한 설계이고, `lib/storage/press-repository.test.ts`
+가 "완전 초기 상태에서 `listPress()`가 빈 배열을 반환한다"를 여러 케이스에서 코드로 못박아 두고 있다.
+실제로 채워서 돌려 보면 그 6개 케이스가 깨진다 — 카테고리 확장의 부산물로 화면 워크스트림 소유의 그
+설계를 조용히 뒤집을 자리가 아니라는 것이 팀장 판정이다(`docs/ISSUES.draft.크롤파이프라인.md`).
+
+즉 이 12곳이 사용자에게 실제로 노출되는 경로는 **오직 `data/press-sources.json`**(위 등록 방법)뿐이다.
+완전 초기 상태(파일을 지우고 새로 시작)에서는 여전히 언론사 0건이고, 이 17곳(기존 5 + 신규 12)을 전부
+손으로 다시 입력해야 한다 — 그 입력 부담을 시드로 풀지 가져오기 기능으로 풀지는 I-037의 빈 상태 설계를
+지키면서 화면 워크스트림과 함께 다음 회차에 검토할 문제로 남겨 두었다.

@@ -22,7 +22,7 @@ vi.mock('./paths', async (importOriginal) => {
   }
 })
 
-const { listRuns, getRun, finishRun, RunNotFoundError } = await import('./run-repository')
+const { listRuns, getRun, finishRun, createRun, RunNotFoundError } = await import('./run-repository')
 const { runsRootDir } = await import('./paths')
 
 beforeEach(async () => {
@@ -147,6 +147,35 @@ describe('getRun — pressResults 없는 과거 run-meta.json 호환(I-022)', ()
     expect(run.failedPressCount).toBe(0)
     // 목록에서 사라지지 않는 것까지 확인한다 — 이 함정의 실제 증상이 그것이다.
     await expect(listRuns()).resolves.toHaveLength(1)
+  })
+
+  /**
+   * `targetCategories`(Task 027)도 같은 함정을 공유한다 — 필수로 두면 이 필드가 생기기 전에
+   * 만들어진 run-meta.json이 스키마에서 떨어져 listRuns가 그 run을 통째로 숨긴다.
+   */
+  it('targetCategories 키가 없는 파일도 빈 배열로 기본값 처리되어 listRuns에서 사라지지 않는다(Task 027)', async () => {
+    await writeRunMeta(VALID_RUN_ID, validRunMetaJson(VALID_RUN_ID))
+
+    const run = await getRun(VALID_RUN_ID)
+
+    expect(run.targetCategories).toEqual([])
+    await expect(listRuns()).resolves.toHaveLength(1)
+  })
+})
+
+describe('createRun — targetCategories 스냅샷을 기록한다(Task 027)', () => {
+  it('targetCategories를 넘기면 run-meta.json에 그대로 남는다', async () => {
+    const run = await createRun(['etnews'], ['sports', 'economy'])
+
+    expect(run.targetCategories).toEqual(['sports', 'economy'])
+    const persisted = await getRun(run.id)
+    expect(persisted.targetCategories).toEqual(['sports', 'economy'])
+  })
+
+  it('넘기지 않으면 빈 배열로 기록한다(pressIds로 직접 고른 기존 경로)', async () => {
+    const run = await createRun(['etnews'])
+
+    expect(run.targetCategories).toEqual([])
   })
 })
 

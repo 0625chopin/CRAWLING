@@ -51,10 +51,13 @@ afterEach(() => {
 
 const RUN_ID = '20260810-090000'
 
+// category는 이 스위트의 시나리오와 무관하지만 Press.category가 필수 출력 필드라 값을 채워야
+// 한다(21일차 저장소 계층 Task 026 — docs/ISSUES.draft.저장소계층.md, I-050과 같은 형태의 함정).
 const rssPressSummaryOnly: RssPressSource = {
   id: 'bloter',
   name: '블로터',
   isActive: true,
+  category: 'it-ai',
   sourceType: 'rss',
   feedUrl: 'https://example.com/feed.xml',
 }
@@ -63,6 +66,7 @@ const rssPressFullText: RssPressSource = {
   id: 'inews24',
   name: '아이뉴스24',
   isActive: true,
+  category: 'it-ai',
   sourceType: 'rss',
   feedUrl: 'https://example.com/feed.xml',
   contentSelector: '#articleBody > p',
@@ -72,6 +76,7 @@ const htmlPress: HtmlPressSource = {
   id: 'zdnet-korea',
   name: 'ZDNet 코리아',
   isActive: true,
+  category: 'it-ai',
   sourceType: 'html',
   listUrl: 'https://example.com/news',
   articleLinkSelector: '.newsPost .assetText > a',
@@ -116,6 +121,8 @@ describe('crawlPress — RSS 요약만(contentSelector 없음)', () => {
       title: '기사1',
       url: 'https://example.com/a/1',
       contentSource: 'rss-summary',
+      // 크롤 시점 언론사 카테고리가 기사에 스냅샷된다(Task 027).
+      category: 'it-ai',
     })
     expect(result.failures).toHaveLength(1)
     expect(result.failures[0].error).toMatch(/50자/)
@@ -167,6 +174,8 @@ describe('crawlPress — RSS 본문 전문(contentSelector 있음)', () => {
     const [article] = result.articles
     expect(article.contentSource).toBe('article-page')
     expect(article.title).toBe('삼성전자, HBM4 양산 돌입')
+    // RSS 본문 전문 경로도 언론사 카테고리를 그대로 스냅샷한다(Task 027).
+    expect(article.category).toBe('it-ai')
     // 문단 개행이 살아 있어야 한다 — selectText로 뭉갠 것이 아니라는 증거.
     expect(article.content).toContain('\n\n')
     expect(article.content.length).toBeGreaterThan('요약은 짧다'.length)
@@ -331,6 +340,8 @@ describe('crawlPress — HTML(목록 페이지 → 링크 → 본문)', () => {
 
     expect(result.articles).toHaveLength(2)
     expect(result.articles.every((a) => a.contentSource === 'article-page')).toBe(true)
+    // HTML 경로도 언론사 카테고리를 그대로 스냅샷한다(Task 027).
+    expect(result.articles.every((a) => a.category === 'it-ai')).toBe(true)
     expect(result.articles.map((a) => a.url).sort()).toEqual([
       'https://example.com/view/?no=1',
       'https://example.com/view/?no=2',

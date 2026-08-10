@@ -26,6 +26,43 @@
 
 ---
 
+## 카테고리 확장 (21일차 신규 기능, Task 028)
+
+`docs/ROADMAP.md`에 없는 신규 기능이다. 저장소 계층(Task 026)이 `GET /api/runs/{runId}/articles`에
+반복 파라미터 `category`(미지정 = 전체)와 응답의 `uncategorizedCount`(카테고리 필터로 제외된 "카테고리
+미상" 기사 수)를 확정했고, 이 화면은 그 계약을 아래처럼 쓴다.
+
+- **④ 기사 파일 목록에 카테고리 필터가 붙는다.** `components/results/article-file-list.tsx`의 검색
+  Input 아래에 `components/common/category-filter.tsx`(`ToggleGroup type="multiple"`, 라벨은
+  `PRESS_CATEGORY_LABELS`)를 두고, 값이 바뀌면 `fetchRunArticles(runId, query, categories)`를 다시
+  불러 목록을 좁힌다.
+- **"카테고리 미상 N건은 제외했습니다" 안내(팀장 판정).** 카테고리 필터가 걸리면 값이 없는 과거
+  기사는 제외되는데, Task 027(크롤 파이프라인)이 값을 채우기 전에 저장된 기사는 전부 미상이라
+  **필터를 걸면 결과가 0건일 수 있다.** 빈 상태를 그냥 "결과 없음"으로 두면 필터가 고장났다고
+  읽히므로, `categories.length > 0 && uncategorizedCount > 0`일 때 목록 카드 안에
+  `카테고리 미상 {N}건은 제외했습니다.` 문구(`text-xs text-muted-foreground`)를 띄운다.
+- **③ 실행 요약 카드에 진짜 "대상 카테고리" 행이 생겼다(21일차 후속).** 저장소 계층이
+  `RunSummary.targetCategories: PressCategory[]`를 내려주기 시작했다 — `CrawlRun.targetCategories`
+  (크롤 파이프라인 Task 027, 실행 시작 당시의 카테고리 스냅샷)를 그대로 통과시킨 값이다. 이 dl
+  행은 `summary.targetCategories`를 그대로 배지로 그리고, **빈 배열이면 행 자체를 렌더링하지
+  않는다** — 빈 배열은 "언론사를 카테고리가 아니라 개별 선택했다"와 "이 필드가 생기기 전 과거
+  run이다" 두 경우를 구분 없이 가리키는 같은 사실("카테고리 스냅샷 없음")이라, "전체"나 5종
+  나열처럼 값을 지어내지 않는다(아래 "카테고리 필터"가 예전에 겪은 것과 같은 오류를 반복하지
+  않는다).
+- **"카테고리 필터" 행은 그대로 남지만, dl 밖으로 물리적으로 뗐다.** 실행 요약 dl(실행 시각·대상
+  언론사·대상 카테고리·수집 결과·저장 경로)과 한 줄에 섞여 있으면 새로 생긴 "대상 카테고리"와
+  라벨이 너무 비슷해 헷갈린다(21일차 팀장 지적). `Separator` 아래 별도 구획으로 떼고,
+  "(아래 기사 목록에 지금 적용된 값)"이라는 보조 문구와 `Filter` 아이콘으로 "이건 실행의 고정된
+  속성이 아니라 지금 사용자가 조작 중인 화면 상태다"를 명시한다. 값은 여전히
+  `app/results/page.tsx`가 쥔 카테고리 필터 state의 echo이고, `RunSummaryCard`·`ArticleFileList`가
+  그 state를 공유한다(`selectedArticleId`와 같은 이유). 빈 배열이면 `Badge`로 "전체" 하나만
+  보여준다 — 이 행은 필터 UI의 echo이므로 "미지정 = 전체"라는 필터 자체의 규칙을 그대로 따르는
+  것이 맞고, 위 "대상 카테고리"처럼 값을 감추지 않는다(성격이 다른 두 빈 배열이라 같은 규칙을
+  적용하지 않는다).
+- 실행(run)을 바꾸면 카테고리 필터도 검색어·선택 기사와 함께 초기화된다.
+
+---
+
 ## 화면 구성
 
 | 영역 | 목적 |

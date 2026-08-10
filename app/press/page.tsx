@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Info, Newspaper, Plus } from 'lucide-react'
 
+import { CategoryFilter } from '@/components/common/category-filter'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { EmptyState } from '@/components/common/empty-state'
 import { PageContainer } from '@/components/common/page-container'
@@ -13,8 +14,10 @@ import { PressFormDialog } from '@/components/press/press-form-dialog'
 import { PressTable } from '@/components/press/press-table'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { fetchPressList, type PressSourceWithUrl } from '@/lib/api/press-client'
+import type { PressCategory } from '@/lib/types/press'
 
 type LoadState = 'loading' | 'error' | 'ready'
 
@@ -26,6 +29,8 @@ export default function PressManagePage() {
   const [state, setState] = useState<LoadState>('loading')
   // 재조회 트리거 — "다시 시도" 버튼은 이 값을 바꿔 아래 이펙트를 다시 돌리는 방식으로 재조회한다.
   const [reloadToken, setReloadToken] = useState(0)
+  // 카테고리 목록 필터(Task 028). 빈 배열 = 전체 — GET /api/press의 category 쿼리와 같은 규칙이다.
+  const [categories, setCategories] = useState<PressCategory[]>([])
 
   const [formDialogState, setFormDialogState] = useState<FormDialogState>(null)
   // PressFormDialog에 매번 새 key를 주기 위한 카운터. 다이얼로그를 열 때마다 증가시켜
@@ -36,13 +41,13 @@ export default function PressManagePage() {
   const [deleteTarget, setDeleteTarget] = useState<PressSourceWithUrl | null>(null)
 
   useEffect(() => {
-    fetchPressList()
+    fetchPressList(categories)
       .then((data) => {
         setPressList(data)
         setState('ready')
       })
       .catch(() => setState('error'))
-  }, [reloadToken])
+  }, [reloadToken, categories])
 
   const retry = useCallback(() => {
     setState('loading')
@@ -105,6 +110,18 @@ export default function PressManagePage() {
         </AlertDescription>
       </Alert>
 
+      {/* 카테고리 목록 필터(Task 028) — 값이 바뀌면 위 이펙트가 GET /api/press?category=...를 다시 부른다. */}
+      <div className="mb-6 flex flex-col gap-1.5">
+        <Label htmlFor="press-category-filter">카테고리 필터</Label>
+        <CategoryFilter
+          id="press-category-filter"
+          value={categories}
+          onValueChange={setCategories}
+          disabled={state === 'loading'}
+          aria-label="카테고리 필터"
+        />
+      </div>
+
       {state === 'error' && (
         <ErrorAlert description="언론사 목록을 불러오지 못했습니다" onRetry={retry} />
       )}
@@ -147,13 +164,23 @@ export default function PressManagePage() {
 
       {state === 'ready' && pressList.length === 0 && (
         <div className="flex flex-col items-center gap-3">
-          <EmptyState
-            icon={<Newspaper />}
-            title="등록된 언론사가 없습니다"
-            description="크롤링을 시작하려면 먼저 언론사를 추가하세요."
-            actionLabel="언론사 추가"
-            onAction={openCreateDialog}
-          />
+          {categories.length > 0 ? (
+            <EmptyState
+              icon={<Newspaper />}
+              title="이 카테고리에 등록된 언론사가 없습니다"
+              description="필터를 해제하거나 다른 카테고리를 선택해 보세요."
+              actionLabel="필터 해제"
+              onAction={() => setCategories([])}
+            />
+          ) : (
+            <EmptyState
+              icon={<Newspaper />}
+              title="등록된 언론사가 없습니다"
+              description="크롤링을 시작하려면 먼저 언론사를 추가하세요."
+              actionLabel="언론사 추가"
+              onAction={openCreateDialog}
+            />
+          )}
         </div>
       )}
 

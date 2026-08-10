@@ -47,6 +47,29 @@
 
 ---
 
+## 카테고리 확장 (21일차 신규 기능, Task 028)
+
+`docs/ROADMAP.md`에 없는 신규 기능이다. 저장소 계층(Task 026)이 `Press.category`
+(`'it-ai'|'entertainment'|'sports'|'economy'|'stock'`)와 `PRESS_CATEGORY_LABELS`(한국어 표시명 맵,
+`lib/types/press.ts`)를 확정했고, 이 화면은 그 값을 아래 두 곳에 반영한다.
+
+- **② 언론사 선택 카드가 카테고리로 묶인다.** `components/crawl/press-select-card.tsx`가
+  `press.category`로 목록을 그룹핑해, 카테고리 헤더(`{PRESS_CATEGORY_LABELS[category]} ({개수})`)마다
+  전체 선택/해제 체크박스(`Checkbox` + `Label`, 전체 선택과 같은 3단 상태)를 둔다. 그룹은
+  `pressCategorySchema.options` 고정 순서를 따르고, 언론사가 없는 카테고리는 렌더링하지 않는다.
+  라벨 문자열은 항상 `PRESS_CATEGORY_LABELS`에서 가져오고 직접 타이핑하지 않는다.
+- **④ 진행 패널에 현재 처리 중인 카테고리가 드러난다.** "현재: {언론사명} — n/m건" 문구에
+  `{언론사명} · {카테고리}` 형태로 카테고리를 덧붙이고, 언론사별 상태 리스트(`press-run-status-list.tsx`)의
+  각 행에도 `Badge variant="outline"`로 카테고리를 표시한다. `RunProgress`(크롤 파이프라인 소유
+  스키마)에는 카테고리 필드가 없으므로, `app/page.tsx`가 이미 들고 있는 `pressList`에서
+  `pressId → category` 맵을 만들어 클라이언트에서 join한다 — 저장소·크롤 파이프라인 타입은
+  건드리지 않는다.
+
+이 변경은 `press-select-card.tsx`·`crawl-run-panel.tsx`·`press-run-status-list.tsx`·`app/page.tsx`에만
+영향을 주고, 크롤링 시작 요청(`crawlStartRequestSchema`)이나 진행 상태 폴링 응답 스키마는 바뀌지 않았다.
+
+---
+
 ## 와이어프레임 — 데스크톱 (≥1024px)
 
 아이콘 자리 표기: `▶`=Play, `⚙`=Settings2 (아래 "사용 컴포넌트"의 lucide 목록과 대응)

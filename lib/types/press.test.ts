@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { htmlPressSchema, pressCreateSchema, pressSchema, rssPressSchema } from './press'
+import {
+  htmlPressSchema,
+  pressCreateSchema,
+  pressSchema,
+  rssPressSchema,
+} from './press'
 
 // discriminatedUnion 거부 케이스 회귀 확인 — 통과하면 화면은 멀쩡해 보이지만
 // data/press-sources.json에 방식이 섞인 잡종 레코드가 쌓인다(docs/ROADMAP.md Task 004 DoD).
@@ -132,5 +137,58 @@ describe('pressSchema — 저장된 레코드(id 포함) 검증', () => {
         html.articleLinkSelector
       )
     }
+  })
+})
+
+// Task 026 — category는 선택 필드 + 기본값 'it-ai'다. 이 기본값이 실제로 적용되지 않으면
+// 카테고리 키가 없는 기존 data/press-sources.json 5곳이 조용히 다른 값으로 파싱되거나(값이
+// undefined인 채로 남거나) 아예 스키마에서 떨어져 D-026·I-022와 같은 함정("해당 언론사가
+// 목록에서 통째로 사라진다")을 재현한다.
+describe('pressCreateSchema — category 기본값과 검증(Task 026)', () => {
+  it('category 키가 없는 과거 형태 입력은 기본값 it-ai로 파싱된다', () => {
+    const result = pressCreateSchema.parse({
+      name: '전자신문',
+      isActive: true,
+      sourceType: 'rss',
+      feedUrl: 'https://rss.etnews.com/Section901.xml',
+    })
+
+    expect(result.category).toBe('it-ai')
+  })
+
+  it('category를 명시하면 그 값을 그대로 쓴다', () => {
+    const result = pressCreateSchema.parse({
+      name: '스포츠서울',
+      isActive: true,
+      sourceType: 'rss',
+      feedUrl: 'https://example.com/sports.xml',
+      category: 'sports',
+    })
+
+    expect(result.category).toBe('sports')
+  })
+
+  it('5종을 벗어난 category 값은 거부한다', () => {
+    const result = pressCreateSchema.safeParse({
+      name: '전자신문',
+      isActive: true,
+      sourceType: 'rss',
+      feedUrl: 'https://rss.etnews.com/Section901.xml',
+      category: 'politics',
+    })
+
+    expect(result.success).toBe(false)
+  })
+
+  it('저장된 레코드 스키마(pressSchema)도 category 키가 없으면 it-ai로 파싱한다 — data/press-sources.json 5곳이 그대로 통과해야 한다', () => {
+    const result = pressSchema.parse({
+      id: 'etnews',
+      name: '전자신문',
+      isActive: true,
+      sourceType: 'rss',
+      feedUrl: 'https://rss.etnews.com/Section901.xml',
+    })
+
+    expect(result.category).toBe('it-ai')
   })
 })

@@ -107,6 +107,27 @@ describe('serializeArticle → parseArticle 왕복', () => {
 
     expect(parsed.contentSource).toBe('rss-summary')
   })
+
+  // Task 027: 크롤 시점 언론사 카테고리 스냅샷이 메타 라인에 실려 왕복한다.
+  it('category가 있으면 메타 라인에 실려 왕복 후에도 보존된다(Task 027)', () => {
+    const article: Article = { ...baseArticle, category: 'it-ai' }
+
+    const { text, parsed } = roundTrip(article)
+
+    expect(parsed.category).toBe('it-ai')
+    expect(text).toContain('# category: it-ai')
+  })
+
+  // Task 027 이전에 저장된 기사 txt에는 category 메타 라인이 아예 없다 — 그런 파일도 예외 없이
+  // 그대로 읽혀야 한다(CONVENTIONS §7, 없으면 undefined로 흘린다).
+  it('category 메타 라인이 없는 기존 기사 txt도 그대로 읽힌다(Task 027 이전 파일과의 호환)', () => {
+    const legacyText = serializeArticle(baseArticle) // baseArticle에는 category가 없다
+
+    const parsed = parseArticle(legacyText, { runId: baseArticle.runId, articleId: baseArticle.id })
+
+    expect(parsed.category).toBeUndefined()
+    expect(legacyText).not.toContain('# category:')
+  })
 })
 
 describe('parseArticle — 손상된 파일 방어(docs/CONVENTIONS.md §7)', () => {

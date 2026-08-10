@@ -72,6 +72,8 @@ export async function GET(
       content: article.content,
       contentSource: article.contentSource,
       crawledAt: article.crawledAt,
+      // 크롤 시점 카테고리 스냅샷(Task 026/027). 값이 없으면 null — "카테고리 미상"이다.
+      category: article.category ?? null,
     })
   }, '기사 본문을 불러오지 못했습니다')
 }

@@ -91,7 +91,7 @@ shadcn MCP로 `sheet` / `drawer` / `dropdown-menu` 세 후보를 비교했습니
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ header  h-14 sticky top-0 z-50 border-b bg-background/95 backdrop-blur     │
 │ ┌──────────────────────────────────────────────────────────────────────┐ │
-│ │ [🐛] IT/AI 뉴스 핫 키워드 크롤러   🕷 크롤링 실행 📄 수집 결과 🔥 핫 키워드 분석  │ │
+│ │ [🐛] 뉴스 핫 키워드 크롤러   🕷 크롤링 실행 📄 수집 결과 🔥 핫 키워드 분석          │ │
 │ │                                   📰 언론사 관리 🚫 불용어 관리      [☀/🌙] │ │
 │ └──────────────────────────────────────────────────────────────────────┘ │
 ├──────────────────────────────────────────────────────────────────────────┤
@@ -117,7 +117,7 @@ shadcn MCP로 `sheet` / `drawer` / `dropdown-menu` 세 후보를 비교했습니
 주석:
 
 - `🕷 🕷📄🔥📰🚫`는 각 메뉴의 lucide 아이콘 자리입니다(실제 아이콘 매핑은 "사용 컴포넌트" 절 참고).
-- 데스크톱 내비(`hidden md:flex`)와 햄버거(`md:hidden`)의 전환점은 **768px**입니다. 로고 텍스트는 그와 별개로 **1024px(`lg`)** 에서 전문("IT/AI 뉴스 핫 키워드 크롤러")과 축약형("핫키워드 크롤러")이 교체됩니다 — 768~1023px 구간은 메뉴 5개가 이미 펼쳐진 상태라 전문 로고까지 얹으면 헤더가 넘칩니다(`components/layout/site-header.tsx`).
+- 데스크톱 내비(`hidden md:flex`)와 햄버거(`md:hidden`)의 전환점은 **768px**입니다. 로고 텍스트는 그와 별개로 **1024px(`lg`)** 에서 전문("뉴스 핫 키워드 크롤러")과 축약형("핫키워드 크롤러")이 교체됩니다 — 768~1023px 구간은 메뉴 5개가 이미 펼쳐진 상태라 전문 로고까지 얹으면 헤더가 넘칩니다(`components/layout/site-header.tsx`). 전문 로고는 21일차(Task 028)에 카테고리 확장을 반영해 "IT/AI 뉴스 핫 키워드 크롤러"에서 이 이름으로 바뀌었습니다.
 - `main.flex-1`과 그 아래 컨테이너 `<div>`는 **`<PageContainer>`가 함께 렌더링합니다.** 화면 문서가 이 두 요소를 직접 그리지 않습니다.
 
 ---
@@ -699,8 +699,10 @@ export function SiteHeader() {
             className="flex shrink-0 items-center gap-2 text-sm font-semibold sm:text-base"
           >
             <Bug aria-hidden="true" className="size-5" />
-            {/* 768~1023px는 메뉴 5개가 이미 펼쳐져 있어 전문 로고까지 넣으면 헤더가 넘친다 */}
-            <span className="hidden lg:inline">IT/AI 뉴스 핫 키워드 크롤러</span>
+            {/* 768~1023px는 메뉴 5개가 이미 펼쳐져 있어 전문 로고까지 넣으면 헤더가 넘친다.
+                카테고리가 IT/AI 외 4종으로 늘면서(Task 028) "IT/AI 뉴스"는 더 이상 정확하지
+                않아 카테고리 중립 이름으로 바꿨다. */}
+            <span className="hidden lg:inline">뉴스 핫 키워드 크롤러</span>
             <span className="lg:hidden">핫키워드 크롤러</span>
           </Link>
           <MainNav />
@@ -854,9 +856,9 @@ const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'IT/AI 뉴스 핫 키워드 크롤러',
+  title: '뉴스 핫 키워드 크롤러',
   description:
-    '선택한 언론사에서 IT/AI 기사를 수집하고 형태소 분석으로 핫 키워드를 뽑아내는 도구',
+    '선택한 언론사에서 IT/AI·엔터·스포츠·경제·증권 기사를 수집하고 형태소 분석으로 핫 키워드를 뽑아내는 도구',
 }
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {

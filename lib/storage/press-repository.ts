@@ -8,6 +8,7 @@ import {
   pressSchema,
   pressUpdateSchema,
   rssPressSchema,
+  type PressCategory,
   type PressCreateInput,
   type PressSource,
   type PressUpdateInput,
@@ -60,6 +61,11 @@ async function loadAll(): Promise<PressSource[]> {
 
 export interface ListPressOptions {
   activeOnly?: boolean
+  /**
+   * 다중 선택 카테고리 필터(Task 026). 비어 있거나 미지정이면 전체 카테고리를 포함한다 —
+   * `GET /api/press`의 "미지정 = 전체" 계약이 여기서 그대로 성립한다.
+   */
+  categories?: PressCategory[]
 }
 
 /**
@@ -70,9 +76,14 @@ export async function listPress(
   options: ListPressOptions = {}
 ): Promise<PressSource[]> {
   const pressList = await loadAll()
-  const filtered = options.activeOnly
-    ? pressList.filter((press) => press.isActive)
-    : pressList
+  const filtered = pressList
+    .filter((press) => !options.activeOnly || press.isActive)
+    .filter(
+      (press) =>
+        !options.categories ||
+        options.categories.length === 0 ||
+        options.categories.includes(press.category)
+    )
   return [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 

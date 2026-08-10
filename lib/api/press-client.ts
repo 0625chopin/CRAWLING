@@ -1,5 +1,10 @@
 import type { ApiFailure, ApiSuccess } from '@/lib/api/response'
-import type { PressCreateInput, PressSource, PressUpdateInput } from '@/lib/types/press'
+import type {
+  PressCategory,
+  PressCreateInput,
+  PressSource,
+  PressUpdateInput,
+} from '@/lib/types/press'
 
 /**
  * GET /api/press가 내려주는 형태. 서버가 sourceType 분기 없이 쓸 수 있는 대표 URL을
@@ -69,8 +74,15 @@ async function unwrap<T>(response: Response): Promise<T> {
   return body.data
 }
 
-export async function fetchPressList(): Promise<PressSourceWithUrl[]> {
-  const response = await fetch('/api/press')
+/**
+ * 언론사 목록. `categories`를 지정하면 `?category=a&category=b` 다중 선택 쿼리로 내려간다
+ * (Task 026, `app/api/press/route.ts`의 계약과 동일). 미지정 또는 빈 배열이면 전체다.
+ */
+export async function fetchPressList(categories?: PressCategory[]): Promise<PressSourceWithUrl[]> {
+  const params = new URLSearchParams()
+  for (const category of categories ?? []) params.append('category', category)
+  const query = params.toString()
+  const response = await fetch(`/api/press${query ? `?${query}` : ''}`)
   return unwrap<PressSourceWithUrl[]>(response)
 }
 

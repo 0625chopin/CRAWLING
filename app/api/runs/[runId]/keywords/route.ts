@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 
+import { categoryQuerySchema, readCategoryParams } from '@/lib/api/query-params'
 import { fail, fieldErrorsFromZod, ok, withErrorBoundary } from '@/lib/api/response'
 import { analyzeRun } from '@/lib/keyword/analyze-run'
 import { buildKeywordsResponseBody } from '@/lib/keyword/keywords-response'
@@ -48,6 +49,9 @@ const keywordsQuerySchema = z.object({
     .int('표시 개수는 정수여야 합니다')
     .positive('표시 개수는 1 이상이어야 합니다')
     .optional(),
+  // ?category=a&category=b 다중 선택(Task 026). minCount·pos·topN과 달리 캐시(keywords.json)
+  // 위에서 거르지 못한다 — analyzeRun이 지정되면 캐시를 건너뛰고 그 자리에서 다시 집계한다.
+  category: categoryQuerySchema,
 })
 
 /**
@@ -61,6 +65,14 @@ const keywordsQuerySchema = z.object({
  * true) — 불리언 플래그는 "true가 아니면 false"로 충분해 무효값을 zod로 따로 거부할 이유가
  * 없다. `minCount`·`pos`·`topN`은 숫자·enum 형식이 잘못될 수 있어 zod로 검증해 필드별 한국어
  * 메시지를 낸다(docs/CONVENTIONS.md §6).
+ *
+ * `category`(Task 026)는 앞의 셋과 다르게 캐시 위에서 거르지 못한다 — 어떤 기사가 집계에
+ * 들어갔는지 자체가 달라지기 때문이다. 지정되면 `analyzeRun`이 캐시를 건너뛰고 그 자리에서
+ * 다시 집계하며(`force`와 무관), 그 결과를 `keywords.json`에 쓰지도 않는다(analyze-run.ts
+ * 참고). 기사 쪽 category 값의 원천은 크롤 파이프라인(Task 027)이 남기는 스냅샷이라 지금은
+ * 모든 기사가 값이 없고, **값이 없는 기사(카테고리 미상)는 필터가 걸리면 제외된다**(21일차
+ * 팀장 판정으로 뒤집힘 — `lib/api/article-category-filter.ts` 상단 주석). 그 제외분은
+ * 조용히 사라지지 않고 응답의 `uncategorizedCount`로 실린다.
  */
 export async function GET(
   request: NextRequest,
@@ -73,6 +85,7 @@ export async function GET(
     minCount: request.nextUrl.searchParams.get('minCount') ?? undefined,
     pos: request.nextUrl.searchParams.get('pos') ?? undefined,
     topN: request.nextUrl.searchParams.get('topN') ?? undefined,
+    category: readCategoryParams(request.nextUrl.searchParams),
   })
   if (!parsed.success) {
     return fail('입력값을 확인하세요', 400, fieldErrorsFromZod(parsed.error))
@@ -81,7 +94,7 @@ export async function GET(
   return withErrorBoundary(async () => {
     let result
     try {
-      result = await analyzeRun(runId, { force })
+      result = await analyzeRun(runId, { force, categories: parsed.data.category })
     } catch (error) {
       // 없는 run은 D-022가 확정한 전용 타입으로 온다 — 문자열 매칭으로 판정하지 않는다.
       if (error instanceof RunNotFoundError) {
@@ -97,7 +110,9 @@ export async function GET(
     const body = buildKeywordsResponseBody(
       result.file,
       { minCount: parsed.data.minCount, pos: parsed.data.pos, topN: parsed.data.topN },
-      result.skippedArticleCount
+      result.skippedArticleCount,
+      result.uncategorizedCount,
+      result.sourceArticleCount
     )
     return ok(body)
   }, '키워드 분석 결과를 불러오지 못했습니다')

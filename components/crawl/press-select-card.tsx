@@ -14,6 +14,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { PressSourceWithUrl } from '@/lib/api/press-client'
+import { PRESS_CATEGORY_LABELS, pressCategorySchema, type PressCategory } from '@/lib/types/press'
 
 export type PressListLoadState = 'loading' | 'error' | 'ready'
 
@@ -29,9 +30,30 @@ export interface PressSelectCardProps {
   selectedIds: ReadonlySet<string>
   onToggleOne: (id: string) => void
   onToggleAll: (nextChecked: boolean) => void
+  /** 카테고리 헤더의 전체 선택/해제(Task 028) — 그 카테고리에 속한 언론사만 한 번에 토글한다. */
+  onToggleCategory: (category: PressCategory, nextChecked: boolean) => void
   onRetry: () => void
   /** 크롤링 실행 중에는 선택을 바꿀 수 없다(설계서 §③ "실행 중에는 체크박스를 disabled 처리"). */
   disabled?: boolean
+}
+
+/**
+ * 카테고리별로 묶는다(Task 028 — "언론사 선택 카드를 카테고리로 묶어 보여준다"). 카테고리가
+ * 하나도 없는 그룹은 렌더링하지 않고, 고정 순서(`pressCategorySchema.options`)를 따른다 —
+ * 목록 순서가 매 렌더마다 흔들리면 안 되기 때문이다.
+ */
+function groupByCategory(
+  pressList: PressSourceWithUrl[]
+): [PressCategory, PressSourceWithUrl[]][] {
+  const groups = new Map<PressCategory, PressSourceWithUrl[]>()
+  for (const press of pressList) {
+    const list = groups.get(press.category)
+    if (list) list.push(press)
+    else groups.set(press.category, [press])
+  }
+  return pressCategorySchema.options
+    .filter((category) => groups.has(category))
+    .map((category) => [category, groups.get(category)!] as [PressCategory, PressSourceWithUrl[]])
 }
 
 /**
@@ -46,6 +68,7 @@ export function PressSelectCard({
   selectedIds,
   onToggleOne,
   onToggleAll,
+  onToggleCategory,
   onRetry,
   disabled = false,
 }: PressSelectCardProps) {
@@ -122,37 +145,71 @@ export function PressSelectCard({
             <Separator />
 
             <ScrollArea className="h-[320px] pr-3 sm:h-[420px]">
-              <ul role="group" aria-labelledby="press-select-summary" className="space-y-1">
-                {pressList.map((press) => (
-                  <li key={press.id}>
-                    <label
-                      htmlFor={`press-${press.id}`}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-transparent px-2.5 py-2 hover:bg-muted"
-                    >
-                      <span className="flex items-center gap-3">
+              <div role="group" aria-labelledby="press-select-summary" className="space-y-4">
+                {groupByCategory(pressList).map(([category, presses]) => {
+                  const selectedInGroup = presses.filter((press) => selectedIds.has(press.id)).length
+                  const groupChecked: CheckedState =
+                    selectedInGroup === 0
+                      ? false
+                      : selectedInGroup === presses.length
+                        ? true
+                        : 'indeterminate'
+
+                  return (
+                    <div key={category} className="space-y-1">
+                      {/* 카테고리 헤더 — 전체 선택 체크박스와 같은 3단 상태를 쓴다(Task 028). */}
+                      <div className="flex items-center gap-2 px-1">
                         <Checkbox
-                          id={`press-${press.id}`}
-                          checked={selectedIds.has(press.id)}
+                          id={`press-category-${category}`}
+                          checked={groupChecked}
                           disabled={disabled}
-                          onCheckedChange={() => onToggleOne(press.id)}
+                          aria-label={`${PRESS_CATEGORY_LABELS[category]} 카테고리 전체 선택`}
+                          onCheckedChange={(checked) =>
+                            onToggleCategory(category, checked === true)
+                          }
                         />
-                        <span className="flex flex-col">
-                          <span className="text-sm font-medium">{press.name}</span>
-                          <span className="font-mono text-xs text-muted-foreground">
-                            {press.sourceUrl}
-                          </span>
-                        </span>
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        {/* sourceType으로 URL을 다시 조립하지 않는다 — sourceUrl은 API가 이미
-                            내려준 값을 그대로 쓴다(Task 008). 배지는 Task 009A의 재사용 컴포넌트. */}
-                        <SourceTypeBadge sourceType={press.sourceType} />
-                        {press.isActive && <Badge variant="secondary">활성</Badge>}
-                      </span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
+                        <Label
+                          htmlFor={`press-category-${category}`}
+                          className="text-xs font-semibold text-muted-foreground"
+                        >
+                          {PRESS_CATEGORY_LABELS[category]} ({presses.length})
+                        </Label>
+                      </div>
+                      <ul className="space-y-1">
+                        {presses.map((press) => (
+                          <li key={press.id}>
+                            <label
+                              htmlFor={`press-${press.id}`}
+                              className="flex items-center justify-between gap-3 rounded-lg border border-transparent px-2.5 py-2 hover:bg-muted"
+                            >
+                              <span className="flex items-center gap-3">
+                                <Checkbox
+                                  id={`press-${press.id}`}
+                                  checked={selectedIds.has(press.id)}
+                                  disabled={disabled}
+                                  onCheckedChange={() => onToggleOne(press.id)}
+                                />
+                                <span className="flex flex-col">
+                                  <span className="text-sm font-medium">{press.name}</span>
+                                  <span className="font-mono text-xs text-muted-foreground">
+                                    {press.sourceUrl}
+                                  </span>
+                                </span>
+                              </span>
+                              <span className="flex items-center gap-1.5">
+                                {/* sourceType으로 URL을 다시 조립하지 않는다 — sourceUrl은 API가 이미
+                                    내려준 값을 그대로 쓴다(Task 008). 배지는 Task 009A의 재사용 컴포넌트. */}
+                                <SourceTypeBadge sourceType={press.sourceType} />
+                                {press.isActive && <Badge variant="secondary">활성</Badge>}
+                              </span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )
+                })}
+              </div>
             </ScrollArea>
           </>
         )}

@@ -2,8 +2,10 @@
 
 import { CircleCheckBig, CircleX, Clock, LoaderCircle, Square } from 'lucide-react'
 
+import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { PressRunStatus } from '@/lib/types/crawl-run'
+import { PRESS_CATEGORY_LABELS, type PressCategory } from '@/lib/types/press'
 
 export interface PressRunStatusListProps {
   pressStatuses: PressRunStatus[]
@@ -13,6 +15,8 @@ export interface PressRunStatusListProps {
    * 언론사 전체 실패도 복원되지 않는다. 목록 대신 런 레벨 안내 한 줄로 대체한다(D-030 결정 4).
    */
   recovered?: boolean
+  /** pressId → 카테고리 조회용 맵(Task 028). 없는 항목은 배지를 렌더링하지 않는다. */
+  categoryByPressId?: ReadonlyMap<string, PressCategory>
 }
 
 /**
@@ -35,7 +39,11 @@ const STATUS_LABEL: Record<DisplayStatus, string> = {
   aborted: '중단됨',
 }
 
-export function PressRunStatusList({ pressStatuses, recovered = false }: PressRunStatusListProps) {
+export function PressRunStatusList({
+  pressStatuses,
+  recovered = false,
+  categoryByPressId,
+}: PressRunStatusListProps) {
   if (recovered) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -49,6 +57,7 @@ export function PressRunStatusList({ pressStatuses, recovered = false }: PressRu
       <ul className="space-y-2">
         {pressStatuses.map((item) => {
           const displayStatus: DisplayStatus = isAbortedPartial(item) ? 'aborted' : item.status
+          const category = categoryByPressId?.get(item.pressId)
 
           return (
             <li key={item.pressId} className="flex items-center justify-between gap-2 text-sm">
@@ -69,6 +78,11 @@ export function PressRunStatusList({ pressStatuses, recovered = false }: PressRu
                   <Square className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 )}
                 <span className="truncate">{item.name}</span>
+                {category && (
+                  <Badge variant="outline" className="shrink-0 text-[10px]">
+                    {PRESS_CATEGORY_LABELS[category]}
+                  </Badge>
+                )}
               </span>
               <span
                 className={

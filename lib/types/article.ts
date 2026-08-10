@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { pressCategorySchema } from './press'
+
 /**
  * 본문 출처. RSS 요약과 원문 전문이 한 실행에 섞이면 전문을 수집한 언론사의 단어가
  * 빈도 상위를 차지하는 편향이 생긴다 — 나중에 이를 확인하려면 기사별로 남아 있어야 한다(docs/PRD.md §Article).
@@ -19,6 +21,19 @@ export const articleSchema = z.object({
   content: z.string(),
   contentSource: contentSourceSchema,
   crawledAt: z.iso.datetime({ offset: true }),
+  /**
+   * 크롤 시점 언론사 카테고리 스냅샷(Task 026). 필드는 저장소 계층이 마련하고, 실제 값은 크롤
+   * 파이프라인(Task 027)이 크롤 당시 `Press.category`를 옮겨 적어 채운다 — Press의 카테고리가
+   * 나중에 바뀌어도 이미 수집된 기사가 속했던 카테고리는 그대로 남아야 하기 때문이다(D-026이
+   * 언론사 이름을 스냅샷하지 않기로 한 것과는 반대 결정이다 — 이름은 "지금"을 보여줘도 되지만
+   * 카테고리는 필터링에 쓰이므로 "그때"가 맞다).
+   *
+   * **기본값을 두지 않는다.** 값이 없는 것과 `'it-ai'`인 것은 다른 뜻이다 — "아직 스냅샷되지
+   * 않음(카테고리 미상)"과 "실제로 IT/AI"를 같은 값으로 뭉개면 안 된다. 지금 저장된 기사는
+   * 전부 이 필드가 없으므로(Task 027 이전), 소비자는 `undefined`를 "카테고리 미상"으로 다루고
+   * 필터에서 제외하지 않는다(`lib/api/article-category-filter.ts`).
+   */
+  category: pressCategorySchema.optional(),
 })
 export type Article = z.infer<typeof articleSchema>
 

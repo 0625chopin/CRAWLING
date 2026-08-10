@@ -87,6 +87,29 @@ RSS 테스트의 "요약 길이 평균"은 이 화면에만 있는 판단 보조
 
 `PressSource` 타입과 `sourceUrlOf`·`expandLabelOf` 헬퍼는 표와 카드 리스트가 함께 쓰므로 한쪽 컴포넌트 파일에 가두지 않는다. 도메인 타입은 `lib/types/`의 zod 스키마에서 `z.infer`로 파생한 것을 쓰고(`docs/CONVENTIONS.md` §3), 같은 모양의 인터페이스를 화면에서 다시 손으로 쓰지 않는다.
 
+### 6) 카테고리 확장 (21일차 신규 기능, Task 028)
+
+`docs/ROADMAP.md`에 없는 신규 기능이다. 저장소 계층(Task 026)이 `Press.category`
+(`'it-ai'|'entertainment'|'sports'|'economy'|'stock'`, 필수·기본값 `'it-ai'`)와
+`PRESS_CATEGORY_LABELS`(`lib/types/press.ts`)를 확정했고, `GET /api/press`에 반복 파라미터
+`category`(미지정 = 전체)를 추가했다. 이 화면은 그 계약을 세 곳에 반영한다.
+
+- **⑤ 추가/수정 다이얼로그에 카테고리 필드가 생긴다.** "이름" 필드 바로 다음, 수집 방식별 필드
+  블록 앞에 `Select`(`카테고리 *`, `PRESS_CATEGORY_LABELS` 5개 항목)를 둔다 — 방식(RSS/HTML)과
+  달리 카테고리는 저장 후에도 필드 구성이 바뀌지 않으므로 방식 분기 블록 밖, 이름과 같은
+  "방식과 무관하게 항상 있는 자리"에 둔다. 기본값은 `'it-ai'`.
+- **③④' 표·카드 목록에 카테고리 배지가 붙는다.** 이름 셀/카드 제목의 수집 방식 배지
+  옆에 `Badge variant="outline"`로 카테고리를 추가로 표시한다(`SourceTypeBadge`와 마찬가지로
+  색상은 지어내지 않고 텍스트 라벨만 쓴다).
+- **목록 위에 카테고리 필터가 붙는다.** ② 안내 Alert 아래, 표/카드 영역 위에
+  `components/common/category-filter.tsx`(`ToggleGroup type="multiple"`)를 두고, 값이 바뀌면
+  `fetchPressList(categories)`를 다시 불러 목록을 좁힌다. 필터가 걸려 결과가 0건이면 빈 상태
+  문구를 "이 카테고리에 등록된 언론사가 없습니다 · 필터 해제"로 갈아 끼운다(언론사가 아예
+  없는 빈 상태와 구분).
+
+이 변경은 `press-form-dialog.tsx`·`press-table.tsx`·`press-card-list.tsx`·`app/press/page.tsx`에만
+영향을 준다.
+
 ## 화면 구성
 
 | 영역 | 목적 |

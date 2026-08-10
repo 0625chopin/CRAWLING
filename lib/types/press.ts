@@ -13,6 +13,31 @@ const pressIdSchema = z
     'id는 소문자·숫자·하이픈만 사용할 수 있습니다'
   )
 
+/**
+ * 언론사 1곳 = 카테고리 1개(팀장 확정, Task 026) — Press가 피드 URL 하나에 대응하므로
+ * "연합뉴스 경제"와 "연합뉴스 스포츠"는 별개 등록이다. 5종 고정이며 여기서만 추가·제거한다.
+ */
+export const pressCategorySchema = z.enum([
+  'it-ai',
+  'entertainment',
+  'sports',
+  'economy',
+  'stock',
+])
+export type PressCategory = z.infer<typeof pressCategorySchema>
+
+/**
+ * 카테고리 한국어 표시명의 단일 소스(Task 026 팀장 지시). 화면이 각자 '엔터'/'엔터테인먼트'로
+ * 갈리지 않도록 여기 한 곳에서만 정의하고, 소비하는 쪽은 이 맵을 그대로 쓴다.
+ */
+export const PRESS_CATEGORY_LABELS: Record<PressCategory, string> = {
+  'it-ai': 'IT/AI',
+  entertainment: '엔터',
+  sports: '스포츠',
+  economy: '경제',
+  stock: '증권',
+}
+
 const pressCommonFields = {
   /**
    * 선택 필드. 언론사가 실제로 쓰는 영문 브랜드명을 슬러그로 직접 지정하고 싶을 때 쓴다
@@ -23,6 +48,18 @@ const pressCommonFields = {
   id: pressIdSchema.optional(),
   name: z.string().min(1, '언론사명을 입력하세요'),
   isActive: z.boolean(),
+  /**
+   * 선택 필드 + 기본값 'it-ai'(Task 026, 팀장 지시). 카테고리 키가 없는 과거
+   * `data/press-sources.json`(기존 5곳)이 필수 필드 취급되면 파싱에서 떨어지고, 그러면
+   * `listPress`가 그 예외를 삼켜 언론사 전체가 목록에서 통째로 사라진다 — D-026·I-022가
+   * `run-meta.json`에서 실제 코드 경로로 확인한 것과 같은 함정이다. 기존 5곳은 전부 IT/AI
+   * 매체이므로 기본값이 실제로도 맞는 값이다.
+   *
+   * **주의**: `z.infer` 출력 타입에서는 `.default()`가 있어도 이 필드가 **필수**다(zod v4 —
+   * 값이 없을 때 채워 넣는 것이지 타입에서 지워지는 것이 아니다). `PressCreateInput`/
+   * `PressSource`를 리터럴로 만드는 코드(테스트 픽스처 등)는 `category`를 명시해야 한다.
+   */
+  category: pressCategorySchema.default('it-ai'),
 }
 
 const rssFields = {

@@ -72,6 +72,9 @@ const NAMED_ENTITIES: Record<string, string> = {
   gt: '>',
   quot: '"',
   apos: "'",
+  // `&amp;`도 같은 표에 둔다. 예전에는 "다른 단계가 되살린 &가 다시 걸리지 않도록" 별도 replace로
+  // 맨 마지막에 처리했는데, 스캔이 한 번으로 줄면서 그 순서 규칙 자체가 필요 없어졌다(I-043).
+  amp: '&',
 }
 
 /**
@@ -81,22 +84,29 @@ const NAMED_ENTITIES: Record<string, string> = {
  * 숫자 참조 전체를 미리 막는다. 이름 있는 엔티티는 실제로 관측된 것만 위 표에 최소로 둔다.
  * `@nodable/entities`(fast-xml-parser가 내부적으로 쓰는 전체 이름 표)는 `package.json`에
  * 선언되지 않은 전이 의존성이라 직접 import하지 않는다(docs/CONVENTIONS.md §3, nanoid와 같은 이유).
+ *
+ * **반드시 한 번의 스캔으로 끝낸다(I-043).** 예전에는 16진 → 10진 → 이름 → `&amp;` 순으로
+ * `.replace()`를 네 번 돌렸는데, 앞 단계가 되살린 `&`를 뒤 단계가 원문의 일부인 것처럼 다시
+ * 스캔해 `&#38;apos;`가 `'`로 이중 디코딩됐다 — `&apos;`만이 아니라 표의 다섯 개가 전부 같은
+ * 경로였다. `&amp;`를 마지막에 두는 기존 보호는 숫자 참조 쪽을 막지 못하고, 숫자 참조와 이름
+ * 있는 엔티티가 서로를 되살릴 수 있어 **순서를 어떻게 바꿔도 반대쪽이 뚫린다.** 스캔 횟수를
+ * 하나로 줄이는 것만이 답이다 — `String.replace`는 같은 호출 안에서 치환 결과를 다시 스캔하지
+ * 않으므로 재해석 경로가 원천적으로 사라진다.
  */
 function decodeHtmlEntities(raw: string): string {
-  return raw
-    .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) => {
-      const code = Number.parseInt(hex, 16)
-      return isValidCodePoint(code) ? String.fromCodePoint(code) : match
-    })
-    .replace(/&#(\d+);/g, (match, dec: string) => {
-      const code = Number.parseInt(dec, 10)
-      return isValidCodePoint(code) ? String.fromCodePoint(code) : match
-    })
-    .replace(
-      /&(nbsp|lt|gt|quot|apos);/gi,
-      (match, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? match
-    )
-    .replace(/&amp;/gi, '&') // 다른 엔티티가 되살린 '&'까지 다시 걸리지 않도록 항상 마지막에 처리한다
+  return raw.replace(
+    /&(?:#x([0-9a-f]+)|#(\d+)|(nbsp|lt|gt|quot|apos|amp));/gi,
+    (match: string, hex?: string, dec?: string, name?: string) => {
+      if (hex !== undefined) return fromCodePoint(Number.parseInt(hex, 16), match)
+      if (dec !== undefined) return fromCodePoint(Number.parseInt(dec, 10), match)
+      return name === undefined ? match : (NAMED_ENTITIES[name.toLowerCase()] ?? match)
+    }
+  )
+}
+
+/** 잘못된 숫자 참조(범위 밖 코드 포인트)는 원문을 그대로 남긴다 — 아래 `isValidCodePoint` 참고. */
+function fromCodePoint(code: number, fallback: string): string {
+  return isValidCodePoint(code) ? String.fromCodePoint(code) : fallback
 }
 
 /** 잘못된 숫자 참조(범위 밖 코드 포인트)로 `String.fromCodePoint`가 던지면 기사 1건이 무너진다

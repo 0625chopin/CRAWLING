@@ -134,6 +134,20 @@ describe('getRun — pressResults 없는 과거 run-meta.json 호환(I-022)', ()
 
     expect(run.pressResults).toEqual([])
   })
+
+  /**
+   * `failedPressCount`(I-040)도 같은 함정을 공유한다 — 필수로 두면 이 필드가 생기기 전에 만들어진
+   * 파일이 스키마에서 떨어지고, `listRuns`가 그 예외를 삼켜 **해당 run이 목록에서 통째로 사라진다.**
+   */
+  it('failedPressCount 키가 없는 파일도 0으로 기본값 처리되어 파싱된다(I-040)', async () => {
+    await writeRunMeta(VALID_RUN_ID, validRunMetaJson(VALID_RUN_ID))
+
+    const run = await getRun(VALID_RUN_ID)
+
+    expect(run.failedPressCount).toBe(0)
+    // 목록에서 사라지지 않는 것까지 확인한다 — 이 함정의 실제 증상이 그것이다.
+    await expect(listRuns()).resolves.toHaveLength(1)
+  })
 })
 
 describe('finishRun — pressResults를 run-meta.json에 남긴다(I-022)', () => {
@@ -155,7 +169,7 @@ describe('finishRun — pressResults를 run-meta.json에 남긴다(I-022)', () =
 
     const finished = await finishRun(
       VALID_RUN_ID,
-      { successCount: 5, failCount: 1, skippedCount: 0 },
+      { successCount: 5, failCount: 1, skippedCount: 0, failedPressCount: 1 },
       pressResults
     )
 
@@ -164,5 +178,31 @@ describe('finishRun — pressResults를 run-meta.json에 남긴다(I-022)', () =
     // 반환값을 신뢰하는 대신 다시 읽어, 실제로 디스크에 쓰였는지 확인한다.
     const persisted = await getRun(VALID_RUN_ID)
     expect(persisted.pressResults).toEqual(pressResults)
+  })
+})
+
+describe('finishRun — 언론사 단위 실패 수를 기사 단위와 나눠 남긴다(I-040)', () => {
+  it('failedPressCount를 그대로 저장하고, status는 여전히 기사 단위 failCount로 정한다', async () => {
+    await writeRunMeta(VALID_RUN_ID, validRunMetaJson(VALID_RUN_ID))
+
+    // I-040의 핵심 상황: 언론사는 한 곳도 통째로 실패하지 않았는데(0) 개별 기사만 2건 실패했다.
+    const finished = await finishRun(
+      VALID_RUN_ID,
+      { successCount: 5, failCount: 2, skippedCount: 0, failedPressCount: 0 },
+      [{ pressId: 'etnews', name: '전자신문', status: 'done', collected: 5, target: 7 }]
+    )
+
+    expect(finished.failedPressCount).toBe(0)
+    // 기사 1건이라도 실패했으면 그 실행은 실제로 "일부 실패"다 — 이 판정 기준은 바뀌지 않았다.
+    expect(finished.status).toBe('partial-failed')
+    expect((await getRun(VALID_RUN_ID)).failedPressCount).toBe(0)
+  })
+
+  it('넘기지 않으면 0으로 기록한다(과거 호출부 호환)', async () => {
+    await writeRunMeta(VALID_RUN_ID, validRunMetaJson(VALID_RUN_ID))
+
+    const finished = await finishRun(VALID_RUN_ID, { successCount: 1, failCount: 0 }, [])
+
+    expect(finished.failedPressCount).toBe(0)
   })
 })

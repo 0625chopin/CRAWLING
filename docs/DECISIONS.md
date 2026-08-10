@@ -614,3 +614,123 @@ runId를 `run-repository.getRun`(fs 읽기, 비동기)으로 복구해야 한다
 
 **실측 확인(9일차, 팀장)**: 끝난 run에 `POST /api/crawl/{runId}/abort` → `409` +
 `이미 종료된 실행은 중단할 수 없습니다: {runId}`. 없는 runId → `404` + `실행을 찾을 수 없습니다: {runId}`.
+
+### D-029 · 「실패」와 「요청하지 않음」은 문구가 아니라 타입으로 가른다
+
+- 상태: 유효
+- 결정: 9일차 마감 후 · 크롤 파이프라인(I-017 해소)
+- 영향 Task: Task 013B · Task 014A/014B · Task 016B
+
+**결정**: 중단으로 요청조차 하지 않은 링크는 `CrawlFailure`(`error: '실행이 중단되어…'`)로 남기지 않고
+별도 통로(`PressCrawlResult.skipped: string[]` → `CrawlRun.skippedCount`)로 옮긴다. 링크 1건의 결과는
+판별 유니온 **`PageOutcome`**(`article` | `failure` | `skipped`)이다.
+
+**대안을 버린 이유**: I-017이 제시한 ②안(`finishRun`이 `status: 'aborted'`일 때 중단 사유 실패를 걸러
+센다)은 `error` 문자열을 다시 문자열로 판정한다. **문구를 다듬는 순간 집계가 조용히 틀어지고, 틀어져도
+화면은 멀쩡해 보인다.** I-016이 같은 이유로 예외 판정을 문자열에서 타입으로 옮긴 전례가 있고
+(`RunNotFoundError`·`RunNotAbortableError`), `docs/CONVENTIONS.md` §3도 "전부 optional인 평평한 객체 +
+수동 검사"가 아니라 `z.discriminatedUnion`을 쓰라고 한다. 같은 원칙을 함수 반환값에도 적용했다.
+
+**함께 정한 것 둘**
+
+1. **건너뛴 링크는 `onArticleDone`을 부르지 않는다.** 집계만 고치고 이 훅을 그대로 두면 진행률이
+   100%까지 차올라 화면은 여전히 "다 됐다"고 말한다 — I-017의 절반은 진행 상태 쪽 거짓이었다.
+   `target`은 원래 목표치를 유지하고 `collected`만 실제 처리 건수에서 멈춘다.
+2. **`CrawlRun`에 새 필드를 더할 때는 기본값 있는 선택 필드로 넣는다.** `skippedCount`를 필수로 두면
+   이 필드가 생기기 전 `run-meta.json`이 `crawlRunSchema.safeParse`에서 떨어지고 → `readRunMeta`가
+   손상으로 던지고 → `listRuns`가 예외를 삼켜 **그 run이 목록에서 통째로 사라진다.** D-026이 I-014를
+   판정하며 실제 코드 경로로 확인한 함정이고, 이번에 그 결론을 규칙으로 굳혔다.
+   회귀는 `lib/types/crawl-run.test.ts`가 고정한다.
+
+**집계에 넣지 않기로 한 것**: 중단 시점에 아직 시작조차 하지 않은 언론사의 `skippedCount`는 0이다.
+목록·피드를 열지 않았으므로 몇 건을 건너뛴 것인지 알 방법이 없고, 요청 시 지정한 최대 건수로 추정해
+채우면 파일에 지어낸 숫자가 남는다. `finishRun`의 `status` 계산에도 `skippedCount`를 넣지 않는다 —
+건너뛴 건이 있다는 이유로 실행이 `partial-failed`가 되면 안 된다.
+
+### D-030 · 중단으로 끝난 실행은 설계서 01의 새 상태 ⑧으로 그리고, 판정은 파생값으로 한다
+
+- 상태: 유효
+- 결정: 10일차 · 크롤 파이프라인(016B 담당) 제기·확정 · 팀장(설계서 반영)
+- 영향 Task: Task 016B(구현) · Task 018A · `docs/screens/01-crawl-run.md`
+- 관련 이슈: **I-019**(이 결정으로 해소) · I-022(복구 경로 한계)
+
+**결정 1 — 설계서에 새 상태 ⑧ 중단됨을 추가한다.** ④완료 문구만 `status`로 갈아 끼우는 안도 검토했지만,
+설계서의 "상태별 화면" 절이 이미 ⑤부분 실패를 **④를 대체하지 않으면서 번호는 따로 매기는** 방식으로
+다루고 있다. 같은 규칙을 따르면 중단도 별도 번호가 맞다. **Task 016 DoD의 "상태 7종"은 8종이 된다.**
+
+다만 **구현에서 새 컴포넌트를 만들지 않는다.** 완료 조각(`DonePanel`)을 그대로 재사용하고
+`status`(`'done' | 'aborted'`)로 아이콘·문구·톤만 갈아 끼운다 — ④와 ⑧은 레이아웃이 완전히 같고 텍스트만
+다르므로, 파일을 쪼개면 같은 마크업이 두 곳에서 따로 자란다(`docs/CONVENTIONS.md` §8).
+
+**결정 2 — `skippedCount`를 노출하되 문구는 "실패"가 아니어야 한다.** 채택 문구는 **"N건 미수집"**.
+그 구분이 I-017 수정의 전부였다(D-029).
+
+**결정 3 — `pressRunStatus` enum에는 값을 추가하지 않는다.** 화면이 기존 필드로 파생 판정한다:
+
+```
+언론사가 "중단됨"으로 보여야 하는 조건 = press.status === 'done' && press.collected < press.target
+```
+
+레지스트리 적중 경로에서 `target`은 항상 실제 목표치로 고정되고 정상 완료된 언론사는 `collected`가
+반드시 `target`과 같아지므로, `done`인데 `collected < target`인 경우는 중단으로 도중에 멈춘 경우뿐이다.
+**스키마 하위호환 검토**: 이 결정은 `lib/types/crawl-run.ts`에 필드를 추가하지 않으므로 D-029 2항이
+경고한 "과거 `run-meta.json`이 `safeParse`에서 떨어지는" 문제 자체가 생기지 않는다.
+
+**결정 4 — 복구 경로(`recovered: true`)에서는 언론사별 상세를 그리지 않는다.** 그 스냅샷은 `target`이
+`collected`와 같은 값으로 강제되어 위 파생 판정이 항상 거짓이고, 언론사 전체 실패도 표현되지 않는다
+(**I-022**). 016B는 런 레벨 안내 한 줄로 대체한다: "이 결과는 서버 재시작 후 복구된 값이라 언론사별
+상세가 정확하지 않을 수 있어요."(문구는 다듬어도 되고 요지만 고정)
+
+**설계서에 반영한 문안**: 요약 줄 "■ 크롤링 중단됨 / 3/4개 언론사 완료 · 기사 53건 저장 · 41건 미수집",
+아이콘 **`Square`**([중단] 버튼이 이미 쓰는 아이콘이라 새 import가 없고 `CircleCheckBig`과 시각적으로
+분명히 다르다), sonner 토스트 "크롤링 중단됨 — 기사 53건 저장, 41건 미수집"(warning 톤 — 사용자가 스스로
+누른 중단이지 오류가 아니므로 destructive가 아니다), 언론사별 항목은 `Square` + "중단됨" +
+`{collected}/{target}건`.
+
+**부수 수정 2건도 함께 반영했다**: §③ 응답 필드 목록에 `recovered` 추가(실제 응답에 있는데 설계서가 안
+그렸다) · 마크업 스켈레톤의 `crawlStatus` TODO 주석이 `'failed'`·`'aborted'`를 빠뜨리고 있어 5종 전체로
+정정(016B가 분기를 빠뜨리지 않게).
+
+### D-031 · D-025가 열어 둔 서버 조립 포맷 함수의 위치는 `lib/api/`로 정한다
+
+- 상태: 유효
+- 결정: 10일차 · 저장소 계층(Task 017)
+- 영향 Task: Task 017(반영)
+
+**배경**: D-025가 "`label`·`durationLabel` 포맷 로직을 순수 함수로 뺀다"까지는 확정했지만 파일 위치는
+017 담당 판단으로 열어 두었다.
+
+**결정**: `lib/api/run-format.ts`(날짜·소요시간·셀렉터 라벨 포맷)와 `lib/api/article-search.ts`(검색
+필터)로 뺀다. `GET /api/runs`·`GET /api/runs/[runId]`·`GET /api/runs/[runId]/articles` 세 라우트가
+공유한다. 회귀는 `lib/api/run-format.test.ts`·`lib/api/article-search.test.ts`.
+
+**근거**: `docs/CONVENTIONS.md` §2는 `lib/api/`를 "클라이언트에서 쓰는 fetch 래퍼와 공통 응답 헬퍼"로
+적어 두었지만, 이미 있는 `lib/api/response.ts`(`ok`/`fail`/`withErrorBoundary`)도 서버 라우트 전용이면서
+이 디렉터리에 있다 — `lib/api/`가 "API 계층이 공유하는 것"을 담는 자리라는 선례가 이미 있다. 두 모듈 다
+`fs`·`playwright`·`kiwi-nlp`를 직접 import하지 않는 순수 함수라 §4의 `import 'server-only'` 의무 대상이
+아니고, vitest 회귀 대상으로 남기려면 오히려 없는 편이 낫다(I-001 참고).
+
+### D-032 · `readArticle`의 "없음"·"손상" 구분은 `fs.access` 사전 확인으로 우회한다
+
+- 상태: 유효 (잠정 — I-020이 해소되면 걷어낸다)
+- 결정: 10일차 · 저장소 계층(Task 017)
+- 영향 Task: Task 017(반영) · Task 007(잠재 수정 대상)
+- 관련 이슈: **I-020**
+
+**배경**: `article-repository.ts`(Task 007, 이 영역의 범위 밖)의 `readArticle`은 "파일 없음"과 "메타 라인
+손상"을 같은 `Error`로 던져 타입 판정이 불가능하다. `docs/CONVENTIONS.md` §7은 파싱 실패를 조용히 삼키지
+말라고 요구하므로, **손상된 파일까지 404로 묶어 버리면 규약을 어긴다.**
+
+**결정**: `app/api/runs/[runId]/articles/[articleId]/route.ts`에서 `readArticle`을 부르기 전에
+`fs.access(articlePath(runId, articleId))`로 존재 여부만 먼저 확인한다. 여기서 실패하면 404로 응답하고,
+존재가 확인된 뒤 `readArticle`이 던지는 예외는 그대로 흘려보내 `withErrorBoundary`가 500으로 처리한다.
+
+**근거**: Task 007 소유 파일을 고치지 않고도 "없음(404)"과 "손상(500)"을 정확히 가를 수 있는 유일한
+방법이었다. 대안(문자열 메시지 매칭으로 404 판정)은 D-022가 이미 같은 종류의 취약점으로 폐기한 패턴이다.
+**교차검증에서 실제로 손상 파일을 만들어 확인했다** — 단건 조회는 500 + "기사 본문을 불러오지 못했습니다"로
+올라오고 404로 둔갑하지 않는다.
+
+**남긴 대가 둘**: 파일 시스템 호출이 1회 늘고(실측상 무시 가능), `articlePath`의 안전 문자 검증 실패까지
+이 try/catch에 걸려 404가 된다 — 그게 **I-021**(경로 순회 시도의 상태 코드가 라우트마다 갈린다)의 한쪽
+사례다. 전용 `ArticleNotFoundError`(I-020)와 `UnsafePathSegmentError`(I-021)가 도입되면 이 우회는 함께
+걷어낸다.

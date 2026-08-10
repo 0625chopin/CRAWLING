@@ -406,3 +406,120 @@ skippedCount: 41`이고 저장된 기사 txt도 **53건**이다. 진행 상태 �
 **남기면 무엇이 나쁜가**: 검증되지 않은 임의 URL을 크롤하는 코드 경로가 라이브러리에 남는다. 라우트가
 없으니 외부에서 부를 수는 없지만, 다음 사람이 "이미 있는 범용 크롤러"로 착각해 새 라우트를 붙일 여지가
 생긴다 — 015A가 그 엔드포인트를 없앤 이유와 정확히 반대다.
+
+### I-019 · 중단으로 끝난 실행을 그리는 화면 상태가 설계서 01에 없다
+
+- 상태: 해결됨
+- 발견: 9일차 마감 후 · 팀장(I-017 수정 검증 중) → 화면(등재)
+- 관련 Task: Task 016B · Task 018A · `docs/screens/01-crawl-run.md`
+
+**증상**: `docs/screens/01-crawl-run.md`의 상태별 화면은 ①기본 ②일부 선택 ③진행 중 ④완료 ⑤부분 실패
+⑥빈 상태 ⑦로딩 일곱 가지인데, **`status: 'aborted'`로 끝난 실행을 그리는 상태가 없다.** 폴링을 멈추는
+조건(§③ 마지막 줄)에는 `aborted`가 들어 있어서, 화면은 "폴링은 멈춰야 하지만 무엇을 그릴지는 정해지지
+않은" 상태로 016B에 넘어간다.
+
+I-017을 고친 뒤 실제 중단 실행의 응답은 `successCount 53 · failCount 0 · skippedCount 41 ·
+status 'aborted'`, 진행 상태는 `overallPercent 56 · bloter 30/30 · boannews 10/10 · inews24 8/30 ·
+zdnet-korea 5/24`다. 숫자는 서로 맞지만 **두 가지가 설계서와 어긋난다.**
+
+1. ④완료 화면을 그대로 쓰면 "✓ 크롤링 완료 · 기사 53건 저장"이 되어 **중단했다는 사실이 사라진다.**
+   ⑤부분 실패는 `failCount > 0` 조건이라 뜨지 않는다(그게 맞다).
+2. 중간에 멈춘 언론사가 `status: 'done'`으로 온다(`8/30`). `pressRunStatus` enum은
+   `waiting | running | done | failed` 넷뿐이라 "하다 말았다"를 표현할 값이 없어, 설계서 §③이 지정한
+   `CircleCheckBig`(완료) 아이콘이 `8/30` 옆에 붙는다.
+
+**왜 코드로 먼저 정할 수 없었는가**: 크롤 파이프라인이 데이터를 고칠 수 있는 부분은 I-017로 닫혔다.
+여기서부터는 **설계서에 없는 상태를 그리는 문제**라 `docs/CONVENTIONS.md` §8("설계서에 없는 UI를
+지어내지 않는다")에 걸린다.
+
+**해소**: 10일차. 016B 담당(크롤 파이프라인)이 설계서 대조와 함께 처리 방안을 확정했다(**D-030**) —
+새 상태 **⑧ 중단됨**을 설계서에 추가하고, `skippedCount`는 "N건 미수집"으로 노출하며,
+`pressRunStatus` enum은 건드리지 않고 `status === 'done' && collected < target` 파생 판정으로 가른다.
+팀장이 그 결정대로 `docs/screens/01-crawl-run.md`에 §⑧과 부수 수정 2건을 반영했다. 016B는 이 문안을
+그대로 집어 들면 된다.
+
+### I-020 · `article-repository.ts`의 `readArticle`이 "없음"과 "손상"을 타입으로 구분하지 못한다
+
+- 상태: 열림
+- 발견: 10일차 · 저장소 계층(Task 017 구현 중)
+- 관련 Task: Task 007(발생지, 범위 밖이라 직접 고치지 않음) · Task 017(회피 구현)
+
+`lib/storage/article-repository.ts`의 `readArticle(runId, articleId)`는 파일이 없을 때와 메타 라인이
+깨졌을 때(`parseArticle`이 던지는 형식 오류) **둘 다 그냥 `Error`를 던진다.** `run-repository.ts`의
+`RunNotFoundError`(D-022가 문자열 접두사 판정의 위험을 지적하고 전용 클래스로 확정한 사례)와 같은
+성격의 문제인데, 이쪽은 아직 전용 클래스가 없다.
+
+`app/api/runs/[runId]/articles/[articleId]/route.ts`(Task 017)는 404("존재하지 않는 기사입니다")와
+500("파싱 실패")을 갈라야 하는데, `readArticle`이 던지는 예외만으로는 **문자열 매칭 없이 가를 수 없다.**
+회피책으로 `readArticle` 호출 전에 `fs.access(articlePath(...))`로 존재만 먼저 확인했다(**D-032**) —
+Task 007 파일을 고치지 않고 우회하는 방식이라 영역 경계는 지켰지만 파일 시스템 호출이 하나 더 생긴다.
+
+**제안**: `RunNotFoundError` 패턴 그대로 `ArticleNotFoundError`를 추가하고 `readArticle`의 ENOENT
+분기가 이 타입으로 던지게 한다. 그러면 Task 017의 우회를 걷어내고 `instanceof` 판정으로 단순화할 수
+있다. **이 변경은 Task 007 소유 파일이라 크롤 파이프라인의 확인이 필요하다.**
+
+**해소**: 아직. Task 017은 위 회피책으로 DoD를 충족했으므로 블로킹은 아니다.
+
+### I-021 · `assertSafeSegment`가 일반 `Error`를 던져 경로 순회 시도가 라우트마다 다른 상태 코드로 응답한다
+
+- 상태: 열림
+- 발견: 10일차 · 크롤 파이프라인(Task 017 교차검증 중) → 저장소 계층(등재)
+- 관련 Task: Task 005(발생지, `lib/storage/paths.ts`) · Task 017 · `app/api/crawl/[runId]/*`(크롤 파이프라인 소유, 같은 증상)
+
+`lib/storage/paths.ts`의 `assertSafeSegment`는 `runId`·`articleId`에 허용되지 않는 문자가 섞이면
+(경로 순회 시도 포함) 평범한 `Error`를 던진다. 전용 타입이 아니라서 **라우트마다 우연히 다른 코드로
+응답이 갈린다.**
+
+**실측(10일차)** — `runId`에 `%2e%2e%2f%2e%2e%2fetc`를 넣으면:
+
+- `GET /api/runs/{runId}`(Task 017) → 예외가 `RunNotFoundError` 전용 `catch`에 안 걸리고 바깥
+  `withErrorBoundary`까지 흘러 **500**.
+- `GET /api/crawl/{runId}`(9일차, 크롤 파이프라인 소유)도 같은 경로로 **500** — **Task 017이 새로 만든
+  결함이 아니라 공통 원인**임을 이 라우트로 재확인했다.
+- 반면 `GET /api/runs/{runId}/articles/{articleId}`는 D-032의 `fs.access` 우회가 try/catch로 감싸고
+  있어 그 예외가 거기 걸려 **404**로 응답한다.
+
+**같은 종류의 입력에 `runId` 경로는 500, `articleId` 경로는 404**를 준다. 후자가 우연히 더 정확한
+코드를 내는 것이지 의도된 설계가 아니다.
+
+**중요 — 순회 차단 자체는 완전하고 원시 오류도 새지 않는다.** `assertSafeSegment`는 여전히 예외를 던져
+경로 조립을 막고, `withErrorBoundary`가 스택·영문 메시지를 화면까지 흘리지 않는다. **문제는 상태
+코드뿐이다** — `docs/CONVENTIONS.md` §6 기준으로 이건 "검증 실패"이므로 400이 맞다.
+
+**제안**: 전용 타입(예: `UnsafePathSegmentError`)을 `paths.ts`에 두고 각 라우트 경계가
+`instanceof`로 `fail(message, 400)`에 매핑한다. I-016이 예외 판정을 문자열에서 타입으로 옮긴 것과 같은
+계열의 처방이다.
+
+**지금 고치지 않은 이유**: `paths.ts`는 공통 기반(Task 005)이라 저장소 계층과 크롤 파이프라인 **두 영역의
+라우트를 함께 손봐야 한다** — 회차 범위를 넘는 교차 영역 변경이라 보류한다.
+
+**해소**: 아직.
+
+### I-022 · 서버 재시작 후 복구된 진행 상태는 언론사 전체 실패를 표현할 수 없다
+
+- 상태: 열림
+- 발견: 10일차 · 크롤 파이프라인(016B 착수 준비 — 상태 7종 대조 중)
+- 관련 Task: Task 014B(발생지, `recoverRunProgress`) · Task 016B(소비처)
+
+**증상**: `getRunProgress`는 이 프로세스가 해당 run을 잡으로 들고 있지 않으면(서버 재시작 등)
+`recoverRunProgress`로 `run-meta.json` + 저장된 기사 파일 개수만으로 `pressStatuses`를 근사 복원한다.
+이 복원 로직은 언론사별 상태를 `collected > 0 ? 'done' : 'waiting'` **두 가지로만** 계산한다
+(`lib/crawler/run-manager.ts:328`) — **`'failed'`로 복원되는 경로가 아예 없고 `failReason`도 채워지지
+않는다.**
+
+즉 목록·피드를 열지 못해 완전히 실패한 언론사(기사 0건)가 있는 실행을 서버 재시작 뒤에 조회하면 그
+언론사는 `status: 'waiting'`(대기)으로 보인다.
+
+**영향**: 설계서 01 §⑤(부분 실패)가 요구하는 `CircleX` + `text-destructive` + 방식별 실패 사유 문구를,
+서버가 그 실행 도중 한 번이라도 재시작되면 **다시 만들어낼 데이터가 없다.** 같은 이유로 D-030의
+"중단됨" 파생 판정(`done && collected < target`)도 복구 경로에서는 항상 거짓이다 — `recoverRunProgress`가
+`target`을 `collected`와 같은 값으로 강제하기 때문이다(`run-manager.ts:330`).
+
+**016B의 대응(D-030에 포함)**: `RunProgress.recovered`가 이미 "이 스냅샷은 근사치"라는 신호를 주고
+있으므로(D-023), 016B는 `recovered === true`일 때 언론사별 상세를 정교하게 그리려 하지 말고 런 레벨
+안내 한 줄로 대체한다. **코드로 없는 데이터를 화면에서 지어내지 않는다.**
+
+**근본 해소 제안**: `recoverRunProgress`가 `run-meta.json`의 `failures[]`를 언론사별로 집계해
+`failed`·`failReason`까지 복원하게 한다. 담당은 크롤 파이프라인이며 016B 착수를 막지는 않는다.
+
+**해소**: 아직.

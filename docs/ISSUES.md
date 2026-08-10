@@ -694,7 +694,9 @@ data/press-sources.json`·`diff data-backup/stopwords.json data/stopwords.json` 
 
 ### I-022 · 서버 재시작 후 복구된 진행 상태는 언론사 전체 실패를 표현할 수 없다
 
-- 상태: 열림
+- 상태: 해결됨 (20일차) — `CrawlRun.pressResults` 신설(저장소 계층 계약, `D-draft` 참고) +
+  `finishRun`이 채움 + `recoverRunProgress`가 있으면 그대로 씀(근사 폴백은 과거 형식/도중 강제종료
+  run에만 남음). 상세는 `docs/DECISIONS.draft.크롤파이프라인.md`
 - 발견: 10일차 · 크롤 파이프라인(016B 착수 준비 — 상태 7종 대조 중)
 - 관련 Task: Task 014B(발생지, `recoverRunProgress`) · Task 016B(소비처)
 
@@ -1166,7 +1168,10 @@ lint·typecheck·build도 전부 통과한다. 화면을 실제로 띄우고, �
 
 ### I-040 · 부분 실패 Alert의 폴백 문구가 언론사 단위가 아니라 기사 단위 실패에서도 뜬다
 
-- 상태: **열림 · MVP가 안고 가는 알려진 한계**(다룰 다음 회차가 없다)
+- 상태: **부분 해결 (20일차)** — 문구만 정정, 집계 단위 자체(근본 원인)는 그대로. 요약줄·Alert
+  제목·본문 세 곳을 기사 단위임이 드러나게 바꾸고 `docs/screens/01-crawl-run.md` §상태별 화면 ⑤에
+  반영했다. **근본 해소(`finishRun`·`RunProgress` 스키마 정합)는 여전히 MVP 범위 밖이다** — 아래
+  본문은 발견 당시 그대로 남긴다
 - 발견: 16일차 · 크롤 파이프라인(I-038 수정 중 옆 분기를 검토하다 발견)
 - 관련 Task: Task 016B(발현) · Task 007(원인) · Task 014A(원인)
 
@@ -1326,7 +1331,10 @@ I-029·I-031·I-037을 보류·보류·기각으로 재분류한 것이 이 문�
 
 ### I-046 · `toThrow(SomeErrorClass)` 어서션은 그 클래스가 사라지면 조용히 완화된다
 
-- 상태: 열림 (낮은 우선순위 · **저비용 수정**)
+- 상태: 해결됨 (20일차) — 4개 파일 9건 전부 `toBeInstanceOf`로 교체 완료.
+  `lib/storage/paths.test.ts`(2건)는 20일차 저장소 계층이, 나머지 7건(`run-manager.test.ts` 5건·
+  `article-repository.test.ts` 1건·`run-repository.test.ts` 1건)은 20일차 크롤 파이프라인이 처리했다.
+  각 파일에서 예외 클래스 export를 잠시 지워 바뀐 어서션이 실패로 깨지는지 확인한 뒤 되돌렸다
 - 발견: 18일차 · 화면(I-006·I-020 산출분 교차검증 중 회귀 실험을 하다가)
 - 관련 Task: 없음(전 워크스트림의 vitest 스위트에 걸친 테스트 작성 관례)
 - 관련 결정: D-022 · D-045 · **I-020**
@@ -1457,3 +1465,71 @@ Error: Export ArticleNotFoundError doesn't exist in target module
 **교차검증이 지적한 절차 구멍**: 이 두 수정은 처음에 **정식 draft 항목으로 등록되지 않고** 크롤 파이프라인
 draft의 "부속" 서술로만 남아 있었다. 그 상태로 마감했으면 문서 각주만 남고 **이슈 번호를 통한 추적 경로가
 끊겼을 것이다.** 저장소 계층이 교차검증에서 이를 짚어 이 블록으로 정식 등재했다.
+
+### I-050 · `CrawlRun.pressResults` 신설로 `run-manager.test.ts`의 `makeRun()`이 타입체크에서 깨졌다
+
+- 상태: **해결됨 (20일차)** — 같은 회차 안에서 크롤 파이프라인이 `makeRun()`에 `pressResults: []` 한 줄을 더해 닫았다
+- 발견: 20일차 · 저장소 계층(I-022 계약 작업 중 `npm run typecheck`를 돌리다가)
+- 관련 Task: Task 004(스키마) · Task 014A(`run-manager.test.ts`)
+- 관련 결정: **D-048** · 관련 이슈: **I-046**
+
+**증상**: `crawlRunSchema`에 `pressResults: z.array(...).default([])`를 더하면 `z.infer`가 만드는
+`CrawlRun`에서 이 필드가 **출력 타입에서는 필수**가 된다(`skippedCount`가 이미 같은 패턴이다).
+`lib/crawler/run-manager.test.ts:91`의 `makeRun()` 헬퍼가 `CrawlRun` 리터럴을 이 필드 없이 만들어
+`npm run typecheck`가 TS2322 1건으로 떨어졌다.
+
+**기록해 둘 값어치는 증상이 아니라 이것이다** — **`npm run test`는 이 실패를 못 잡았다.** vitest는
+esbuild로 타입만 걷어내고 타입 검사를 하지 않으므로, 문제의 헬퍼로 만든 204건이 전부 초록으로 통과했다.
+`npm run typecheck`를 따로 돌리지 않았다면 스키마를 넓힌 회차에서 이 사실을 모르고 넘어갔다.
+**I-046이 "테스트가 자기가 지키려는 것을 못 잡는다"였다면 이건 "테스트 명령 자체가 못 보는 층이 있다"다.**
+회차 마감에 네 명령을 **항상** 돌리라는 규칙(`.claude/skills/workstream-day-runner/SKILL.md` 3단계 5항)이
+이 회차에서 실제로 값을 했다.
+
+**해소**: 20일차. 저장소 계층이 소유 밖이라 고치지 않고 draft로 넘겼고, 다음 릴레이가 `finishRun` 작업으로
+같은 파일을 열면서 함께 닫았다. **소유 경계를 지키느라 회차가 늘어나지 않은 사례다** — 릴레이 순서가
+소유 순서와 같으면 넘긴 것이 다음 구간에서 자연히 처리된다.
+
+### I-051 · `fetchHtml`이 값이 아니라 예외로 실패하면 run이 영원히 `'running'`에 멈춘다
+
+- 상태: **열림** · 재현 미실시(코드 추적으로만 확인)
+- 발견: 20일차 · 크롤 파이프라인(I-022 지시가 "`finishRun` 시점에 `'running'`이 남는 경로가 실제로 있는지 확인하라"고 못 박아 조사하다가)
+- 관련 Task: Task 013A(`fetch-html.ts`, 발생지) · Task 014A(`run-manager.ts`, 발현)
+- 관련 이슈: I-022(발견 계기) · **I-006·D-047**(같은 계열 — 실패를 값으로 격리한다는 원칙)
+
+**증상**: `lib/crawler/fetch-html.ts`의 `fetchHtml`은 주석에 "실패는 예외로 던지지 않고 `CrawlResult`
+값으로 돌려준다"고 적혀 있지만 **그 계약이 지켜지지 않는 경로가 있다.** `getBrowser()`와
+`browser.newContext()` 호출이 `try` 블록 **밖**에 있어(`fetch-html.ts:24-30`), Playwright 기동 실패
+(바이너리 없음·OOM·권한)는 `catch`에 잡히지 않고 그대로 밖으로 나간다.
+
+이 예외는 `crawlHtmlPress` → `crawlPress` → `runOnePress`를 **어느 곳에도 try/catch가 없어** 그대로
+뚫고, `runInBackground`의 `Promise.all`을 reject시킨다. 그런데 `runInBackground`은
+`void runInBackground(...)`로 **`.catch()` 없이** 호출된다. 결과는 unhandled rejection이고:
+
+- **`finishRun`이 아예 호출되지 않는다** — `run-meta.json`이 `status: 'running'`으로 영구히 남는다.
+- **잡 레지스트리에서 이 잡이 제거되지 않는다** — `startRun`의 "이미 running인 잡이 있으면 거절"에
+  계속 걸려 **서버를 재시작하기 전까지 새 크롤을 시작할 수 없다.**
+- 화면은 진행률이 멈춘 채 응답 없는 진행 중 상태를 계속 그린다.
+
+**왜 지금 발견됐나**: 이 프로젝트의 오류 처리 원칙은 "개별 실패는 예외가 아니라 값으로 격리한다"
+(`docs/CONVENTIONS.md` §7, D-047)이고, `fetchHtml`의 주석도 그렇게 선언한다. **선언과 구현이 어긋난
+지점을 아무도 안 봤던 이유는 `try` 두 줄 위에 있는 코드라 눈에 안 들어오기 때문이다.**
+I-022 작업이 "`'running'`이 남는 경로가 있는가"를 명시적으로 물어서야 드러났다.
+
+**`toPressRunResult`의 throw와 혼동하지 말 것**: 20일차에 추가된 `toPressRunResult`는 `'running'`을
+만나면 던지는데, 화면이 교차검증에서 **이 분기가 현재 제어 흐름상 도달 불가능함**을 확인했다 —
+`Promise.all`이 reject 없이 끝났다는 것 자체가 모든 언론사 상태가 terminal이라는 뜻이다. 위 경로에서는
+`Promise.all`이 먼저 reject되므로 그 줄에 닿지도 못한다. **진짜 위험은 예외가 위로 새는 것이지
+방어 assertion이 아니다.**
+
+**재현이 안 된 이유**: 로컬에서 Playwright 기동이 안정적으로 성공해 왔다. 실패 조건을 의도적으로
+만들지 않는 한 이 경로를 타지 않는다.
+
+**고칠 방향(둘 다 필요하다)**:
+1. `fetch-html.ts`의 `try`를 `getBrowser()`·`newContext()`까지 감싼다.
+2. `runInBackground`을 `void`가 아니라 `.catch()`로 받아, 최소한 `finishRun`이 불리고 레지스트리가
+   정리되게 한다(그 시점 `'running'`으로 남은 항목은 `'failed'`로 **명시적으로** 확정한다).
+
+①만 고치면 `crawlPress`가 던질 수 있는 다른 예외에 여전히 취약하고, ②만 고치면 브라우저가 죽을 때마다
+그 언론사가 조용히 `'failed'`가 되고 `fetchHtml`의 문서 계약은 계속 거짓으로 남는다.
+
+**해소**: 아직.

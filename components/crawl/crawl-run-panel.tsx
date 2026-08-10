@@ -215,7 +215,7 @@ function DonePanel({
   progress: RunProgress
   onReset: () => void
 }) {
-  const { status, pressStatuses, successCount, skippedCount } = progress
+  const { status, pressStatuses, successCount, failCount, skippedCount } = progress
   const isAborted = status === 'aborted'
   const hasFailures = status === 'partial-failed' || status === 'failed'
 
@@ -226,13 +226,22 @@ function DonePanel({
   const successPressCount = pressStatuses.filter((item) => item.status === 'done').length
   const failedPresses = pressStatuses.filter((item) => item.status === 'failed')
 
+  // run 상태(partial-failed/failed)를 정하는 finishRun의 failCount는 기사 단위 실패 건수다
+  // (lib/storage/run-repository.ts). 반면 failedPresses는 언론사 전체 실패(피드·목록 페이지
+  // 자체를 못 연 경우)만 센 언론사 단위다. 한 언론사 안에서 기사 몇 건만 실패하고 나머지는
+  // 저장에 성공하면 그 언론사는 'done'인데 run은 hasFailures가 되어, 언론사 단위 실패가
+  // 0곳인 채로 hasFailures가 true일 수 있다(I-040) — 문구를 이 두 값으로 갈라 쓴다.
+  const hasFailedPresses = failedPresses.length > 0
+
   const heading = isAborted ? '크롤링 중단됨' : hasFailures ? '크롤링 완료 (일부 실패)' : '크롤링 완료'
 
   const summary = isAborted
     ? `${fullyDoneCount}/${totalPressCount}개 언론사 완료 · 기사 ${successCount}건 저장 · ${skippedCount}건 미수집`
-    : hasFailures
+    : hasFailedPresses
       ? `${successPressCount}개 성공 · ${failedPresses.length}개 실패 · 기사 ${successCount}건 저장`
-      : `${totalPressCount}개 언론사 · 기사 ${successCount}건 저장`
+      : hasFailures
+        ? `${totalPressCount}개 언론사 · 기사 ${successCount}건 저장 · ${failCount}건 개별 실패`
+        : `${totalPressCount}개 언론사 · 기사 ${successCount}건 저장`
 
   return (
     <div className="space-y-3">
@@ -249,18 +258,20 @@ function DonePanel({
 
       {hasFailures && (
         <ErrorAlert
-          title={`${failedPresses.length}개 언론사 수집 실패`}
+          title={hasFailedPresses ? `${failedPresses.length}개 언론사 수집 실패` : `기사 ${failCount}건 개별 수집 실패`}
           description={
-            failedPresses.length > 0
+            hasFailedPresses
               ? // failReason은 서버가 수집 방식(RSS/HTML)에 맞는 문구로 이미 만들어 보낸다
                 // (docs/screens/01-crawl-run.md §상태별 화면 ⑤) — 여기서 다시 분기하지 않고 그대로 쓴다.
                 failedPresses
                   .map((item) => `${item.name}(${item.failReason ?? '알 수 없는 오류'})`)
                   .join(', ')
-              : // run 상태(partial-failed/failed)는 언론사 단위가 아니라 기사 단위 실패 건수로도
-                // 갈릴 수 있어(lib/storage/run-repository.ts의 finishRun), 개별 기사만 실패하고
-                // 언론사 자체는 'done'으로 끝나는 경우 failedPresses가 빌 수 있다 — 도달 가능한 분기다.
-                '수집에 실패한 언론사가 있습니다.'
+              : // 이 분기는 죽은 코드가 아니다 — run 상태(partial-failed/failed)를 정하는
+                // finishRun의 failCount는 기사 단위 실패 건수라, 언론사 자체는 하나도 전체
+                // 실패(failedPresses)하지 않았는데도 개별 기사만 몇 건 실패하면 여기 도달한다
+                // (I-040). "언론사가 실패했다"는 말을 쓰지 않아야 한다 — 언론사 목록은
+                // 전부 'done'으로 보일 것이기 때문이다.
+                `언론사는 모두 정상 처리됐지만, 개별 기사 ${failCount}건이 수집에 실패했습니다.`
           }
         />
       )}

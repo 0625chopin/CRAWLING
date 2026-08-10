@@ -4,6 +4,8 @@ import path from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { PressRunResult } from '@/lib/types/crawl-run'
+
 let tempDir = ''
 
 // run-repository.ts는 lib/storage/paths.ts의 runsRootDir·runDir·runMetaPath로 파일 위치를
@@ -20,7 +22,7 @@ vi.mock('./paths', async (importOriginal) => {
   }
 })
 
-const { listRuns, getRun, RunNotFoundError } = await import('./run-repository')
+const { listRuns, getRun, finishRun, RunNotFoundError } = await import('./run-repository')
 const { runsRootDir } = await import('./paths')
 
 beforeEach(async () => {
@@ -116,6 +118,51 @@ describe('listRuns — 손상된 실행 격리와 로그(I-006)', () => {
 
 describe('getRun — 존재하지 않는 실행(RunNotFoundError, D-022 회귀)', () => {
   it('존재하지 않는 runId는 RunNotFoundError를 던진다', async () => {
-    await expect(getRun('20269999-000000')).rejects.toThrow(RunNotFoundError)
+    // toThrow(SomeClass)는 그 클래스가 사라지면 인자 없는 toThrow()와 동치로 조용히 완화된다
+    // (I-046). toBeInstanceOf는 undefined가 되면 TypeError로 즉시 실패하므로 안전한 방향이다.
+    await expect(getRun('20269999-000000')).rejects.toBeInstanceOf(RunNotFoundError)
+  })
+})
+
+describe('getRun — pressResults 없는 과거 run-meta.json 호환(I-022)', () => {
+  it('pressResults 키 자체가 없는 파일도 빈 배열로 기본값 처리되어 파싱된다', async () => {
+    // validRunMetaJson은 이 필드가 생기기 전의 실제 run-meta.json 모양을 그대로 흉내 낸다 —
+    // 여기에 pressResults를 추가하면 이 테스트의 목적(과거 파일 호환)이 사라진다.
+    await writeRunMeta(VALID_RUN_ID, validRunMetaJson(VALID_RUN_ID))
+
+    const run = await getRun(VALID_RUN_ID)
+
+    expect(run.pressResults).toEqual([])
+  })
+})
+
+describe('finishRun — pressResults를 run-meta.json에 남긴다(I-022)', () => {
+  it('finishRun에 넘긴 pressResults가 반환값과 디스크에 그대로 반영된다', async () => {
+    await writeRunMeta(VALID_RUN_ID, validRunMetaJson(VALID_RUN_ID))
+
+    const pressResults: PressRunResult[] = [
+      { pressId: 'etnews', name: '전자신문', status: 'done', collected: 5, target: 5 },
+      {
+        pressId: 'techweekly',
+        name: '테크위클리',
+        status: 'failed',
+        collected: 0,
+        target: 0,
+        failReason: '타임아웃',
+        rawFailReason: 'page.goto: Timeout 30000ms exceeded.',
+      },
+    ]
+
+    const finished = await finishRun(
+      VALID_RUN_ID,
+      { successCount: 5, failCount: 1, skippedCount: 0 },
+      pressResults
+    )
+
+    expect(finished.pressResults).toEqual(pressResults)
+
+    // 반환값을 신뢰하는 대신 다시 읽어, 실제로 디스크에 쓰였는지 확인한다.
+    const persisted = await getRun(VALID_RUN_ID)
+    expect(persisted.pressResults).toEqual(pressResults)
   })
 })

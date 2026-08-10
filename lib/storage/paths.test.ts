@@ -107,9 +107,23 @@ describe('paths — 경로 순회 차단', () => {
   // instanceof로 400을 판정할 수 있다. 이 타입이 다시 평범한 Error로 되돌아가면 여기서 즉시
   // 깨지고, 그 회귀는 컴파일 에러도 런타임 예외도 없이 상태 코드만 조용히 500으로 되돌아간다
   // (docs/CONVENTIONS.md §9 "틀려도 화면이 멀쩡해 보이는 로직").
+  // I-046: toThrow(SomeClass)는 SomeClass가 export에서 사라지면 toThrow(undefined)로 조용히
+  // 완화되어 "뭐든 던지기만 하면 통과"가 된다. try/catch + toBeInstanceOf로 나눠 쓰면 인자가
+  // undefined일 때 TypeError로 즉시 실패하므로 같은 함정을 피한다.
   it('경로 순회 입력은 평범한 Error가 아니라 UnsafePathSegmentError를 던진다', () => {
-    expect(() => runDir('../../etc')).toThrow(UnsafePathSegmentError)
-    expect(() => articlePath('20260810-143205', '../../etc')).toThrow(UnsafePathSegmentError)
+    try {
+      runDir('../../etc')
+      throw new Error('여기 도달하면 안 된다 — runDir가 예외를 던졌어야 한다')
+    } catch (error) {
+      expect(error).toBeInstanceOf(UnsafePathSegmentError)
+    }
+
+    try {
+      articlePath('20260810-143205', '../../etc')
+      throw new Error('여기 도달하면 안 된다 — articlePath가 예외를 던졌어야 한다')
+    } catch (error) {
+      expect(error).toBeInstanceOf(UnsafePathSegmentError)
+    }
   })
 
   // 메시지에 입력값을 그대로 반사하지 않는다 — 경로 순회를 시도한 문자열이 그대로 응답에

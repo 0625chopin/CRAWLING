@@ -168,7 +168,10 @@ describe('readArticle — 없음/손상 타입 구분(I-020)', () => {
   it('존재하지 않는 기사는 ArticleNotFoundError를 던진다', async () => {
     await fs.mkdir(articlesDir(RUN_ID), { recursive: true })
 
-    await expect(readArticle(RUN_ID, '9999')).rejects.toThrow(ArticleNotFoundError)
+    // toThrow(SomeClass)는 그 클래스가 사라지면 인자 없는 toThrow()와 동치로 조용히 완화된다
+    // (I-046). toBeInstanceOf는 undefined가 되면 TypeError로 즉시 실패하므로 안전한 방향이다 —
+    // 바로 아래 '.not.toBeInstanceOf(...)' 어서션과도 스타일이 통일된다.
+    await expect(readArticle(RUN_ID, '9999')).rejects.toBeInstanceOf(ArticleNotFoundError)
   })
 
   it('메타 라인이 깨진(손상된) 기사는 ArticleNotFoundError가 아닌 별개의 오류를 던진다', async () => {

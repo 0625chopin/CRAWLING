@@ -2,7 +2,12 @@ import 'server-only'
 
 import fs from 'node:fs/promises'
 
-import { crawlRunSchema, type CrawlRun, type CrawlRunStatus } from '@/lib/types/crawl-run'
+import {
+  crawlRunSchema,
+  type CrawlRun,
+  type CrawlRunStatus,
+  type PressRunResult,
+} from '@/lib/types/crawl-run'
 
 import { ensureDir, writeJson } from './json-store'
 import { articlesDir, runDir, runMetaPath, runsRootDir } from './paths'
@@ -167,10 +172,16 @@ export async function updateRunMeta(
  *
  * `skippedCount`(중단으로 요청조차 하지 않은 건수, I-017)는 **status 계산에 넣지 않는다** —
  * 건너뛴 건이 있다는 이유로 실행이 `partial-failed`가 되면 안 된다. 기록만 한다.
+ *
+ * `pressResults`(I-022 해소)는 언론사별 최종 상태를 그대로 파일에 남긴다 — 이전에는 기사 단위
+ * 합계만 저장돼 서버가 재시작되면 "어느 언론사가 왜 실패했는지"를 다시 만들어낼 수 없었다.
+ * 호출부(`run-manager.ts`)가 실행 종료 시점의 `pressStatuses`를 `PressRunResult[]`로 다듬어
+ * 넘긴다 — 여기서는 그대로 실어 쓸 뿐 다시 계산하지 않는다.
  */
 export async function finishRun(
   runId: string,
-  counts: { successCount: number; failCount: number; skippedCount?: number }
+  counts: { successCount: number; failCount: number; skippedCount?: number },
+  pressResults: PressRunResult[]
 ): Promise<CrawlRun> {
   const status: CrawlRunStatus =
     counts.failCount === 0 ? 'done' : counts.successCount === 0 ? 'failed' : 'partial-failed'
@@ -181,5 +192,6 @@ export async function finishRun(
     skippedCount: counts.skippedCount ?? 0,
     finishedAt: new Date().toISOString(),
     status,
+    pressResults,
   })
 }

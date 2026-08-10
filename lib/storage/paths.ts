@@ -54,3 +54,23 @@ export function articlePath(runId: string, articleId: string): string {
 export function keywordsPath(runId: string): string {
   return path.join(runDir(runId), 'keywords.json')
 }
+
+/**
+ * 절대경로를 프로젝트 루트(`process.cwd()`) 기준 상대경로로 바꾼다. 화면 설계서 02(§실행
+ * 요약 카드 "저장 경로")는 `data/runs/{runId}/articles/`처럼 항상 슬래시 구분 상대경로를
+ * 기대하는데, `path.relative`는 Windows에서 `\`를 돌려준다. 정규화를 빠뜨리면 화면에
+ * `data\runs\...`가 나가면서도 타입체크·빌드·테스트가 전부 통과하는 표시 버그가 되므로
+ * (I-015) 변환을 이 파일 한 곳에만 두고 호출부가 각자 처리하지 않게 한다.
+ */
+function toDisplayPath(absolutePath: string): string {
+  return path.relative(process.cwd(), absolutePath).split(path.sep).join('/')
+}
+
+/**
+ * `articlesDir(runId)`의 화면 표시용 버전. 끝에 `/`를 붙여 디렉터리임을 나타낸다
+ * (와이어프레임 `data/runs/20260810-143205/articles/` 참고, Task 017 응답의 `storagePath`).
+ * runId 검증은 내부에서 부르는 `articlesDir`가 이미 수행하므로 여기서 다시 하지 않는다.
+ */
+export function articlesDisplayPath(runId: string): string {
+  return `${toDisplayPath(articlesDir(runId))}/`
+}

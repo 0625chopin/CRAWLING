@@ -21,8 +21,10 @@ Task 017은 화면 설계서 02가 실제로 그리는 값을 그대로 내려�
   Task 008A의 `sourceUrl` 파생 필드와 같은 패턴이다. 클라이언트가 ISO 문자열을 다시 포맷하게 하면
   화면마다 형식이 갈릴 위험이 있다(ROADMAP 구현 규칙 "서버에서 조립").
 - 대상 언론사는 id가 아니라 **이름**으로 내려주되, 삭제된 언론사는 `deleted: true` 플래그를 함께
-  준다(ROADMAP 구현 규칙). **이름을 무엇으로 채울지는 실제로 막혀 있다** — 아래
-  "발견한 어긋남 ①"을 반드시 먼저 읽는다.
+  준다(ROADMAP 구현 규칙). **삭제된 언론사의 이름은 `null`이다** — `run-meta.json`에 실행 시점
+  이름을 스냅샷하지 않기로 확정했다(I-014, `docs/DECISIONS.draft.저장소계층.md`). `id`는 항상
+  존재하고 `name`만 `null`일 수 있다는 것이 API 계약이다. 화면이 `null`일 때 무엇을 그릴지는
+  화면 워크스트림(Task 018A)의 판단 영역이라 여기서 정하지 않는다.
 - 없는 `runId`/`articleId`는 `fail(message, 404)` + 한국어 메시지.
 
 ---
@@ -60,7 +62,7 @@ type RunListResponse = RunListItem[] // ok(RunListResponse)
 ```ts
 interface TargetPressRef {
   id: string
-  /** 삭제된 언론사면 null일 수 있다 — "발견한 어긋남 ①" 참고. */
+  /** 삭제된 언론사면 null이다(I-014 결정 — 과거 이름을 스냅샷하지 않으므로 복구하지 않는다). */
   name: string | null
   deleted: boolean
 }
@@ -75,7 +77,8 @@ interface RunSummary {
   targetPress: TargetPressRef[]
   successCount: number
   failCount: number
-  /** "발견한 어긋남 ②" — DATA_ROOT 절대경로가 아니라 상대 표시 경로. */
+  /** `lib/storage/paths.ts`의 `articlesDisplayPath(runId)` 반환값을 그대로 쓴다(I-015 해소).
+   *  DATA_ROOT 절대경로가 아니라 `data/runs/{runId}/articles/` 형태의 슬래시 구분 상대경로다. */
   storagePath: string
 }
 
@@ -146,7 +149,7 @@ interface ArticleDetail {
 | ③ 소요시간 | `(소요 6분 36초)` | `RunSummary.durationLabel` (서버 조립) |
 | ③ 대상 언론사 배지 | `[조선일보] [한겨레] [전자신문]` | `RunSummary.targetPress[].name` (+ `deleted`로 "삭제됨" 표시 분기) |
 | ③ 수집 결과 | `성공 42건 · 실패 2건` | `RunSummary.successCount` / `failCount` |
-| ③ 저장 경로 | `data/runs/20260810-143205/articles/` | `RunSummary.storagePath` (상대 표시 경로 — "발견한 어긋남 ②") |
+| ③ 저장 경로 | `data/runs/20260810-143205/articles/` | `RunSummary.storagePath` (= `articlesDisplayPath(runId)`, I-015 해소) |
 | ③ [키워드 분석] 버튼 | `href="/keywords?runId=..."` | `RunSummary.id` (이미 알고 있는 값, 별도 필드 불필요) |
 | ④ 파일명 | `0001.txt` | `ArticleListEntry.fileName` |
 | ④ 언론사 배지 | `조선일보` | `ArticleListEntry.pressName` (+ `pressDeleted`) |
@@ -169,16 +172,20 @@ interface ArticleDetail {
 
 ## 발견한 어긋남 (draft 이슈로 별도 등록)
 
-① **CrawlRun이 대상 언론사 이름을 스냅샷하지 않는다.** `lib/types/crawl-run.ts`의 `CrawlRun`은
-`targetPressIds: string[]`만 갖고 이름을 저장하지 않는다. 언론사가 삭제되면(`deletePress`가
-레지스트리에서 레코드를 완전히 제거) **원래 이름을 복구할 방법이 없다.** `id`로 재조회해 이름을
-찾는 방식(`getPress(id)` → `null`)으로는 "이름 + 삭제됨 플래그"가 아니라 "id만 있고 이름은 영영
-`null`"이 된다. `docs/ISSUES.draft.저장소계층.md`에 상세를 남겼다.
+① **CrawlRun이 대상 언론사 이름을 스냅샷하지 않는다. (I-014 — 9일차 해소, 코드 반영은 Task 017)**
+`lib/types/crawl-run.ts`의 `CrawlRun`은 `targetPressIds: string[]`만 갖고 이름을 저장하지 않는다.
+언론사가 삭제되면(`deletePress`가 레지스트리에서 레코드를 완전히 제거) 원래 이름을 복구할 방법이
+없다. **결론: 스냅샷하지 않는 쪽(1안)으로 확정했다.** `id`는 항상 있고 `name`은 삭제된 언론사면
+`null`이다 — 위 `TargetPressRef`·`ArticleListEntry`·`ArticleDetail` 정의가 이미 이 결론을
+반영한다. 근거는 `docs/DECISIONS.draft.저장소계층.md`, 상세 경위는 `docs/ISSUES.md` I-014.
 
-② **저장 경로 표시값이 없다.** `lib/storage/paths.ts`의 `DATA_ROOT`는
-`path.join(process.cwd(), 'data')`(OS 절대경로)이고, 화면은 `data/runs/{runId}/articles/`처럼
-프로젝트 루트 기준 **상대경로**를 기대한다(와이어프레임·마크업 스켈레톤 모두 상대경로). 지금
-`paths.ts`에는 상대 표시 문자열을 만드는 헬퍼가 없다. `docs/ISSUES.draft.저장소계층.md`에 남겼다.
+② **저장 경로 표시값이 없다. (I-015 — 9일차 해소·코드 반영 완료)** `lib/storage/paths.ts`의
+`DATA_ROOT`는 `path.join(process.cwd(), 'data')`(OS 절대경로)이고, 화면은
+`data/runs/{runId}/articles/`처럼 프로젝트 루트 기준 **상대경로**를 기대한다(와이어프레임·마크업
+스켈레톤 모두 상대경로). **`paths.ts`에 `articlesDisplayPath(runId)` 헬퍼를 추가해 해소했다** —
+Windows의 `\` 구분자를 슬래시로 정규화한 `data/runs/{runId}/articles/` 형태를 돌려준다. 회귀
+케이스는 `lib/storage/paths.test.ts`에 있다. `RunSummary.storagePath`는 이 헬퍼의 반환값을 그대로
+쓰면 된다. 상세는 `docs/ISSUES.md` I-015.
 
 ③ **소요시간·라벨 조립 로직을 어디에 둘지 미정.** `durationLabel`("6분 36초") 같은 포맷 로직이
 `app/api/runs/` 라우트 안에 직접 있으면 4개 엔드포인트 중 여러 곳에서 중복될 수 있다(목록의 `label`도

@@ -269,9 +269,17 @@ DoD로 남긴다. 어느 쪽이든 팀장 승인이 필요해 이슈로 남긴�
 **이 이슈는 Task 017을 막지 않는다.** 다만 화면(Task 018A)이 배지를 어떻게 그릴지 미리 알아야 두
 워크스트림이 같은 가정으로 움직인다.
 
+**판단(9일차, 저장소 계층 — 유휴 배정)**: 제안 ①(API가 `name: null, deleted: true`)로 확정한다.
+근거와 기각한 ②의 사유는 `docs/DECISIONS.draft.저장소계층.md`에 남겼다 — 핵심은 ②를 비파괴적으로
+하려면 `targetPressNames`를 optional로 둬야 하는데, 그러면 스냅샷 없는 과거 run은 여전히 이름이
+비어 있어 "반쪽 해결"이 실제 코드 경로(`crawlRunSchema.safeParse` 실패 → `listRuns`가 통째로
+목록에서 제외)로 확인된다는 점이다. API가 보장하는 계약(`id`는 항상 있고 `name`만 `null`일 수
+있다)을 `docs/run-api-schema.draft.md`에 반영했다. **코드는 바꾸지 않았다** — Task 017 착수
+회차(크롤 파이프라인)가 반영한다.
+
 ### I-015 · 저장 경로를 화면 형식(프로젝트 루트 상대경로)으로 내려줄 수단이 없다
 
-- 상태: 열림
+- 상태: 해결됨
 - 발견: 8일차 · 저장소 계층(유휴 배정 — Task 017 응답 스키마 초안 작성 중)
 - 관련 Task: Task 017(10일차 착수)
 
@@ -288,6 +296,19 @@ DoD로 남긴다. 어느 쪽이든 팀장 승인이 필요해 이슈로 남긴�
 
 **제안**: `paths.ts`에 `articlesDisplayPath(runId)` 같은 헬퍼를 두고 `path.relative(process.cwd(), ...)`를
 슬래시로 정규화해 돌려준다. Task 017 구현 시점에 함께 만든다.
+
+**해소**: 9일차(저장소 계층, 유휴 배정)에 `lib/storage/paths.ts`가 `articlesDisplayPath(runId)`를
+내보내도록 추가했다. 내부적으로 `path.relative(process.cwd(), articlesDir(runId))`를 구하고
+`path.sep` 기준으로 슬래시(`/`)로 정규화한 뒤 끝에 `/`를 붙인다 — 이 저장소가 Windows에서 돌아가고
+`path.relative`가 `\`를 돌려주므로, 정규화를 빠뜨리면 화면에 `data\runs\...`가 나가는데도
+타입체크·빌드·테스트가 전부 통과하는 표시 버그가 된다는 것이 이 이슈의 핵심이었다. runId 검증은
+`articlesDir` → `runDir` → `assertSafeSegment`를 그대로 거치므로 이 헬퍼도 경로 순회 입력에
+동일하게 예외를 던진다(별도 검증을 추가하지 않았다). 회귀 케이스는
+`lib/storage/paths.test.ts`(`paths — 화면 표시용 상대경로 (I-015)`)에 3건 추가했다: 정확한 값
+검증, 반환값에 `\`가 섞이지 않는지 검증(이 저장소가 Windows라 정규화를 빼면 실제로 실패하는
+케이스), 안전하지 않은 runId(`..`·`../../etc`)에 대해 예외가 그대로 전파되는지 검증. `Task 017`
+구현자는 `RunSummary.storagePath`에 이 헬퍼의 반환값을 그대로 쓰면 된다 —
+`docs/run-api-schema.draft.md`에 반영했다.
 
 ### I-016 · run 생명주기 예외를 문자열 메시지로만 구분할 수 있었다
 
@@ -311,3 +332,55 @@ runId"는 `lib/storage/run-repository.ts`의 `readRunMeta`가 던지는 평범�
 판정으로 교체했다. **한국어 메시지 문구는 한 글자도 바꾸지 않았다** — 사용자에게 보이는 문장은
 그대로다. 상세 판단은 D-022. 저장소 계층이 호출 체인 전체를 추적해 중간에 예외를 다시 감싸는 지점이
 없음을 확인했다(타입이 라우트까지 보존된다).
+
+### I-017 · 중단하면 요청하지 않은 기사가 「실패」로 집계되어 화면이 거짓 숫자를 말한다
+
+- 상태: 열림
+- 발견: 9일차 · 팀장(Task 015A 실크롤 검증 중 — 실측으로만 드러났다)
+- 관련 Task: Task 014B · Task 015A · **Task 016B(화면에 그대로 나간다)** · Task 018A
+
+**증상**: 실제 언론사 4곳에 30건씩 크롤을 걸고 중간에 `POST /api/crawl/{runId}/abort`를 호출한 결과
+`run-meta.json`이 이렇게 남았다.
+
+```json
+{ "successCount": 51, "failCount": 43, "status": "aborted" }
+```
+
+기사 txt는 51건이 정상 보존됐다(중단 동작 자체는 옳다). 문제는 **43**이다. 이 숫자는 중단 플래그가
+선 뒤 `collectArticlePages`가 "실행이 중단되어 이 기사는 요청하지 않았습니다"로 접은 링크들이다 —
+**요청조차 하지 않은 것이지 실패한 것이 아니다.**
+
+**왜 조용히 새는가**: 같은 run의 `GET /api/crawl/{runId}` 응답은 언론사 4곳이 **전부 `status: "done"`**
+이고 `collected == target`이다. 즉 **진행 상태는 "다 됐다"고 말하고 `run-meta.json`은 "43건 실패"라고
+말한다.** `docs/ROADMAP.md` Phase 3 완료 기준은 "부분 실패한 실행에서 성공 건수와 실패 건수가 화면과
+`run-meta.json` 양쪽에서 일치한다"를 요구하는데, 두 소스가 이미 어긋나 있다. 016B가 이 값을 그대로
+그리면 사용자는 **중단 버튼을 눌렀을 뿐인데 "실패 43건" destructive Alert**를 보게 된다.
+
+**왜 지금까지 안 보였는가**: 8일차 014B 검증은 전부 mock 기반이었고 `saveArticle` 호출 횟수만 셌다.
+`failCount` 집계는 실제 크롤을 끝까지 돌려 `finishRun`이 파일을 쓰는 것을 봐야 드러난다.
+
+**제안(택1, 판단 필요)**: ① 중단으로 접힌 링크는 `CrawlFailure`로 기록하되 `failCount`에서 제외하고
+별도 `skippedCount`로 센다. ② `finishRun`이 `status: 'aborted'`일 때 중단 사유 실패를 걸러 센다.
+③ 화면이 `status === 'aborted'`면 실패 건수를 다르게 표현한다(가장 싸지만 `run-meta.json` 자체는
+계속 거짓을 담는다). **①·②는 크롤 파이프라인(014B·013B) 몫이고 016B 착수 전에 닫아야 한다.**
+
+### I-018 · `runCrawl`(범용 배치 크롤)이 호출부 없는 죽은 코드가 됐다
+
+- 상태: 열림
+- 발견: 9일차 · 팀장(Task 015A 완료 확인 중)
+- 관련 Task: Task 015A · **Task 023(임시 코드 제거)**
+
+**증상**: 015A가 `app/api/crawl/route.ts`를 언론사 선택 크롤로 전면 교체하면서 기존 범용 배치 크롤
+라우트가 사라졌다(ROADMAP Task 015 구현 규칙이 지시한 대로다). 그 결과 그 라우트가 유일한 호출부였던
+`lib/crawler/run.ts`의 `runCrawl`이 **어디서도 호출되지 않는다** — 저장소 전체에서 남은 참조는
+`lib/crawler/press-crawler.ts:117`의 주석 한 줄뿐이다. `lib/crawler/index.ts`는 여전히 재수출한다.
+
+**왜 지금 지우지 않는가**: `docs/ROADMAP.md` Task 023(임시 코드 제거)의 「생성/수정 파일」은
+`app/api/kiwi-check/route.ts`와 `components/common/screen-placeholder.tsx` 두 건만 명시한다.
+`runCrawl`은 그 목록에 없고, 지금 지우면 `crawlRequestSchema`·`CrawlRequest`·`ResolvedCrawlTarget` 등
+`lib/crawler/types.ts`의 범용 스키마까지 연쇄로 걸린다(D-001이 이 스키마를 남겨 둔 근거를 따로 갖고
+있다). **판단은 023 담당(크롤 파이프라인)이 한다.**
+
+**남기면 무엇이 나쁜가**: 검증되지 않은 임의 URL을 크롤하는 코드 경로가 라이브러리에 남는다. 라우트가
+없으니 외부에서 부를 수는 없지만, 다음 사람이 "이미 있는 범용 크롤러"로 착각해 새 라우트를 붙일 여지가
+생긴다 — 015A가 그 엔드포인트를 없앤 이유와 정확히 반대다.

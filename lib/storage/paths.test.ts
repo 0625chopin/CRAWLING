@@ -6,6 +6,7 @@ import {
   DATA_ROOT,
   articlePath,
   articlesDir,
+  articlesDisplayPath,
   keywordsPath,
   pressSourcesPath,
   runDir,
@@ -47,6 +48,29 @@ describe('paths — 정상 runId·articleId 조립', () => {
     expect(articlePath(runId, '0001')).toBe(
       path.join(DATA_ROOT, 'runs', runId, 'articles', '0001.txt')
     )
+  })
+})
+
+// I-015: 화면(02-collect-result.md)은 저장 경로를 `data/runs/{runId}/articles/`처럼 프로젝트
+// 루트 기준 상대경로 + 슬래시 구분으로 기대한다. 이 저장소는 Windows에서 돌아가므로
+// path.relative가 반환하는 `\` 구분자를 정규화하지 않으면 화면에 `data\runs\...`가 그대로
+// 나가는데도 타입체크·빌드·테스트가 전부 통과한다 — 그 회귀를 여기서 잡는다.
+describe('paths — 화면 표시용 상대경로 (I-015)', () => {
+  const runId = '20260810-143205'
+
+  it('articlesDisplayPath는 슬래시로 구분된 프로젝트 루트 상대경로 + 끝 슬래시를 돌려준다', () => {
+    expect(articlesDisplayPath(runId)).toBe(`data/runs/${runId}/articles/`)
+  })
+
+  it('반환값에 OS 경로 구분자(\\\\)가 섞이지 않는다', () => {
+    expect(articlesDisplayPath(runId)).not.toContain('\\')
+  })
+
+  // articlesDisplayPath는 내부적으로 articlesDir → runDir → assertSafeSegment를 거치므로
+  // 경로 순회 차단이 이 헬퍼에도 그대로 적용됨을 확인한다.
+  it('안전하지 않은 runId는 articleDir와 동일하게 예외를 던진다', () => {
+    expect(() => articlesDisplayPath('..')).toThrow()
+    expect(() => articlesDisplayPath('../../etc')).toThrow()
   })
 })
 

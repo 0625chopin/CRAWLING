@@ -197,7 +197,13 @@ async function runOnePress(
  * 전부 끝난 뒤에만 이 함수를 부른다. 그런데도 `'running'`이 남아 있다면 `crawlPress`가 값이
  * 아니라 예외로 실패해 그 상태 확정 코드 자체가 실행되지 않았다는 뜻이다 — 이 경우 조용히
  * `'done'`이나 `'failed'`로 밀어 넣지 않고 즉시 던진다(그 신호를 지우면 다음 사람이 원인을
- * 못 찾는다). 실제로 이 경로가 존재하는지는 `docs/ISSUES.draft.크롤파이프라인.md`에 남겼다.
+ * 못 찾는다).
+ *
+ * 그 경로는 실재했고(I-051 · `fetchHtml`의 브라우저 기동 실패) 이제 두 겹으로 막혀 있다 —
+ * 발생지는 `fetch-html.ts`가 값으로 돌려주게 고쳤고, 그래도 새는 예외는 아래
+ * `failRunOnUnexpectedError`가 받아 `'running'`을 명시적으로 `'failed'`로 확정한 뒤 이 함수를
+ * 부른다. 즉 여기 도달하는 `'running'`은 **그 두 겹을 모두 빠져나온 미지의 경로**라는 뜻이므로
+ * 계속 던지는 것이 맞다.
  */
 function toPressRunResult(status: PressRunStatus): PressRunResult {
   const { status: pressStatus, ...rest } = status
@@ -266,6 +272,59 @@ async function runInBackground(
 }
 
 /**
+ * `runInBackground`이 값이 아니라 예외로 끝났을 때 실행을 강제로 마무리한다(I-051).
+ *
+ * 이 안전망이 없으면 예외 하나가 unhandled rejection으로 사라지면서 `finishRun`이 아예 불리지
+ * 않는다. 그 결과는 화면 멈춤 하나로 끝나지 않는다 — `run-meta.json`이 영구히 `'running'`으로
+ * 남고, 레지스트리의 잡도 `'running'`인 채라 `startRun`의 "이미 실행 중" 거절에 계속 걸려
+ * **서버를 재시작하기 전까지 새 크롤을 시작할 수 없다.**
+ *
+ * 아직 결말이 없는 언론사(`'running'`·`'waiting'`)는 전부 `'failed'`로 확정한다. 예외가 어느
+ * 언론사에서 났는지 알 수 없으므로 어느 쪽도 성공으로 올리지 않는다 — 진행 중이던 언론사는
+ * 실제로 끝을 못 봤고, 대기 중이던 언론사는 이 실행에서 영영 시작되지 않는다. 이미 `'done'`인
+ * 언론사는 기사를 실제로 저장했으므로 건드리지 않는다.
+ */
+async function failRunOnUnexpectedError(
+  runId: string,
+  pressStatuses: PressRunStatus[],
+  progress: RunProgress,
+  error: unknown
+): Promise<void> {
+  // 원인 자체는 사용자에게 보여줄 수 없는 원시 오류다(CONVENTIONS §7). 서버 콘솔에만 남긴다.
+  console.error(`[run-manager] 크롤 실행이 예외로 중단됐습니다: ${runId}`, error)
+  const rawReason = error instanceof Error ? error.message : String(error)
+
+  for (const status of pressStatuses) {
+    if (status.status === 'running' || status.status === 'waiting') {
+      status.status = 'failed'
+      status.failReason = '실행이 예기치 않게 중단되었습니다'
+      status.rawFailReason = rawReason
+    }
+  }
+
+  // 이 경로에는 `runInBackground`이 계산하던 기사 단위 집계가 없다(그 코드에 닿기 전에 죽었다).
+  // 진행 훅이 실시간으로 갱신해 온 `collected`를 성공 건수로, `'failed'` 언론사 수를 실패 건수로
+  // 쓴다 — 실패 건수의 단위가 기사가 아니라 언론사인 것은 I-040과 같은 계열의 근사이고, 여기서는
+  // 그 근사가 오히려 안전하다(예외로 죽은 언론사의 기사 단위 실패 수는 셀 방법 자체가 없다).
+  const successCount = pressStatuses.reduce((sum, status) => sum + status.collected, 0)
+  const failCount = pressStatuses.filter((status) => status.status === 'failed').length
+  progress.successCount = successCount
+  progress.failCount = failCount
+
+  try {
+    const finished = await finishRun(runId, { successCount, failCount, skippedCount: 0 }, pressStatuses.map(toPressRunResult))
+    progress.status = finished.status
+  } catch (finishError) {
+    console.error(`[run-manager] 중단된 실행의 마무리 기록에도 실패했습니다: ${runId}`, finishError)
+    // 파일에 못 남겼더라도 메모리 잡만은 종료 상태로 못박는다 — 그러지 않으면 위에 적은
+    // "새 크롤을 영영 시작할 수 없는" 상태가 그대로 남는다. 디스크에 남은 `'running'`은
+    // 다음 조회 때 `recoverRunProgress`가 `'aborted'`로 정리한다.
+    progress.status = 'failed'
+  }
+  progress.currentPressName = null
+}
+
+/**
  * 요청과 크롤의 수명을 분리한다. `runId`를 만들고 `run-meta.json`(status: `running`)을 기록한
  * 뒤 즉시 반환하고, 실제 크롤은 `runInBackground`가 계속 돈다 — 이 도구는 `next dev`/`next start`로
  * 도는 장수명 로컬 Node 프로세스를 전제하므로 이 방식이 성립한다(docs/ROADMAP.md Task 014
@@ -320,7 +379,12 @@ export async function startRun(input: CrawlStartRequest): Promise<{ runId: strin
 
   // 반환은 여기서 끝난다. 아래는 await하지 않고 백그라운드로 흘려보낸다 — startRun 호출자는
   // 크롤 완료를 기다리지 않는다(Task 014 DoD "1초 이내에 runId 반환").
-  void runInBackground(run.id, pressSources, pressStatuses, progress, maxArticlesPerPress, job)
+  //
+  // 다만 `void`로 버리지는 않는다(I-051): 예외가 unhandled rejection으로 사라지면 finishRun이
+  // 불리지 않아 run이 영구히 'running'에 갇히고 새 크롤도 시작할 수 없게 된다.
+  void runInBackground(run.id, pressSources, pressStatuses, progress, maxArticlesPerPress, job).catch(
+    (error: unknown) => failRunOnUnexpectedError(run.id, pressStatuses, progress, error)
+  )
 
   return { runId: run.id }
 }

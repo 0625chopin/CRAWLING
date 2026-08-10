@@ -629,3 +629,56 @@ describe('failReason 정형화(normalizeFailReason)', () => {
     })
   })
 })
+
+/**
+ * I-051 회귀 방어. 이 경로는 "화면이 멈춘다"로 끝나지 않고 **새 크롤을 영영 시작할 수 없게**
+ * 만드는 자물쇠라, 수동 확인으로는 잡히지 않는다(로컬에서 Playwright 기동이 늘 성공해 왔다).
+ */
+describe('runInBackground이 값이 아니라 예외로 끝나는 경우(I-051)', () => {
+  it('예외가 새어도 finishRun이 불리고 run이 running에 갇히지 않는다', async () => {
+    // 원인은 서버 콘솔에만 남긴다(CONVENTIONS §7) — 테스트 출력까지 더럽히지 않게 막는다.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const press = makeRssPress('press-a', '언론사 A')
+    getPressMock.mockResolvedValue(press)
+    // fetchHtml의 브라우저 기동 실패처럼 crawlPress가 CrawlResult 값이 아니라 예외로 죽는 상황.
+    crawlPressMock.mockRejectedValue(new Error('browserType.launch: Executable was not found'))
+
+    await startRun({ pressIds: [press.id] })
+    await vi.waitFor(async () => {
+      expect((await getRunProgress(RUN_ID)).status).not.toBe('running')
+    })
+
+    expect(finishRunMock).toHaveBeenCalled()
+    // 아직 결말이 없던 언론사는 성공으로 올리지 않고 실패로 확정한다.
+    expect((await getRunProgress(RUN_ID)).pressStatuses[0]).toMatchObject({
+      status: 'failed',
+      failReason: '실행이 예기치 않게 중단되었습니다',
+    })
+    consoleError.mockRestore()
+  })
+
+  it('예외로 끝난 뒤에도 새 실행을 시작할 수 있다(레지스트리가 running으로 잠기지 않는다)', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const press = makeRssPress('press-a', '언론사 A')
+    getPressMock.mockResolvedValue(press)
+    crawlPressMock.mockRejectedValue(new Error('browserType.launch: Executable was not found'))
+
+    await startRun({ pressIds: [press.id] })
+    await vi.waitFor(async () => {
+      expect((await getRunProgress(RUN_ID)).status).not.toBe('running')
+    })
+
+    // 고치기 전에는 여기서 RunAlreadyRunningError가 났다 — 서버를 재시작해야만 풀렸다.
+    crawlPressMock.mockResolvedValue({
+      pressId: press.id,
+      articles: [],
+      failures: [],
+      skipped: [],
+    } satisfies PressCrawlResult)
+    await expect(startRun({ pressIds: [press.id] })).resolves.toMatchObject({ runId: RUN_ID })
+    await vi.waitFor(async () => {
+      expect((await getRunProgress(RUN_ID)).status).not.toBe('running')
+    })
+    consoleError.mockRestore()
+  })
+})

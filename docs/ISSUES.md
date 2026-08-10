@@ -1491,7 +1491,7 @@ esbuild로 타입만 걷어내고 타입 검사를 하지 않으므로, 문제�
 
 ### I-051 · `fetchHtml`이 값이 아니라 예외로 실패하면 run이 영원히 `'running'`에 멈춘다
 
-- 상태: **열림** · 재현 미실시(코드 추적으로만 확인)
+- 상태: **해결됨 (21일차)** — 아래 "고칠 방향" 두 가지를 모두 적용하고 회귀 테스트로 못박았다
 - 발견: 20일차 · 크롤 파이프라인(I-022 지시가 "`finishRun` 시점에 `'running'`이 남는 경로가 실제로 있는지 확인하라"고 못 박아 조사하다가)
 - 관련 Task: Task 013A(`fetch-html.ts`, 발생지) · Task 014A(`run-manager.ts`, 발현)
 - 관련 이슈: I-022(발견 계기) · **I-006·D-047**(같은 계열 — 실패를 값으로 격리한다는 원칙)
@@ -1532,4 +1532,27 @@ I-022 작업이 "`'running'`이 남는 경로가 있는가"를 명시적으로 �
 ①만 고치면 `crawlPress`가 던질 수 있는 다른 예외에 여전히 취약하고, ②만 고치면 브라우저가 죽을 때마다
 그 언론사가 조용히 `'failed'`가 되고 `fetchHtml`의 문서 계약은 계속 거짓으로 남는다.
 
-**해소**: 아직.
+**해소**: 21일차. 위 두 가지를 **둘 다** 적용했다.
+
+1. `lib/crawler/fetch-html.ts` — `getBrowser()`·`newContext()`를 `try` 안으로 넣어 브라우저 기동 실패가
+   `CrawlFailure` 값으로 나가게 했다. `context`를 `BrowserContext | null`로 선언해 `finally`가
+   `context?.close()`로 정리한다. **`close()` 실패도 `try`로 감쌌다** — `finally`에서 던지면 방금 만든
+   `CrawlResult`가 통째로 예외로 바뀌어, 계약을 지키러 온 수정이 같은 자리에서 계약을 깬다.
+2. `lib/crawler/run-manager.ts` — `void runInBackground(...)`을 `.catch(failRunOnUnexpectedError)`로 받는다.
+   이 핸들러는 결말이 없는 언론사(`'running'`·`'waiting'`)를 전부 `'failed'` + `실행이 예기치 않게
+   중단되었습니다`로 확정하고 `finishRun`을 부른다. 집계는 진행 훅이 실시간 갱신해 온 `collected` 합을
+   성공 건수로, `'failed'` 언론사 수를 실패 건수로 쓴다(예외로 죽은 언론사의 기사 단위 실패 수는 셀
+   방법 자체가 없다 — I-040과 같은 계열의 의도된 근사다). `finishRun` **자체가 실패해도** 메모리 잡의
+   `progress.status`는 `'failed'`로 못박는다 — 그러지 않으면 "새 크롤을 영영 시작할 수 없는" 상태가
+   그대로 남는다. 디스크에 남은 `'running'`은 다음 조회 때 `recoverRunProgress`가 정리한다.
+
+`toPressRunResult`의 방어 throw는 **그대로 둔다.** 이제 두 겹을 모두 빠져나온 미지의 경로만 거기 닿으므로
+신호로서 더 정확해졌다 — 그 취지를 함수 doc에 적었다.
+
+**회귀 테스트**: `lib/crawler/run-manager.test.ts`에 `crawlPress`가 값이 아니라 예외로 죽는 케이스 2건을
+추가했다(① `finishRun`이 불리고 run이 `'running'`에 갇히지 않는다 ② 그 뒤 새 실행을 시작할 수 있다).
+**수정을 되돌리면 두 건 모두 실패하는 것까지 확인했다** — 이 결함은 "화면이 멈춘다"로 끝나지 않고 서버
+재시작 전까지 새 크롤을 막는 자물쇠라, 수동 확인으로는 잡히지 않는다.
+
+**곁다리**: `run-manager.ts`의 `toPressRunResult` doc이 이미 사라진 `docs/ISSUES.draft.크롤파이프라인.md`를
+가리키고 있어 이 이슈 번호로 바꿨다.

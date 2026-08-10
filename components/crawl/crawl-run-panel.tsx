@@ -252,10 +252,15 @@ function DonePanel({
           title={`${failedPresses.length}개 언론사 수집 실패`}
           description={
             failedPresses.length > 0
-              ? `${failedPresses
+              ? // failReason은 서버가 수집 방식(RSS/HTML)에 맞는 문구로 이미 만들어 보낸다
+                // (docs/screens/01-crawl-run.md §상태별 화면 ⑤) — 여기서 다시 분기하지 않고 그대로 쓴다.
+                failedPresses
                   .map((item) => `${item.name}(${item.failReason ?? '알 수 없는 오류'})`)
-                  .join(', ')} — 수집 방식에 따라 사유 문구가 다르다.`
-              : '수집에 실패한 언론사가 있습니다.'
+                  .join(', ')
+              : // run 상태(partial-failed/failed)는 언론사 단위가 아니라 기사 단위 실패 건수로도
+                // 갈릴 수 있어(lib/storage/run-repository.ts의 finishRun), 개별 기사만 실패하고
+                // 언론사 자체는 'done'으로 끝나는 경우 failedPresses가 빌 수 있다 — 도달 가능한 분기다.
+                '수집에 실패한 언론사가 있습니다.'
           }
         />
       )}

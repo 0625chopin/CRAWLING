@@ -4,6 +4,7 @@ import { matchesArticleQuery } from '@/lib/api/article-search'
 import { fail, ok, withErrorBoundary } from '@/lib/api/response'
 import { listArticles } from '@/lib/storage/article-repository'
 import { listPress } from '@/lib/storage/press-repository'
+import { UnsafePathSegmentError } from '@/lib/storage/paths'
 import { getRun, RunNotFoundError } from '@/lib/storage/run-repository'
 
 // Node.js 런타임이 이미 기본값이므로 runtime export를 두지 않는다(docs/CONVENTIONS.md §6).
@@ -30,6 +31,10 @@ export async function GET(
     } catch (error) {
       if (error instanceof RunNotFoundError) {
         return fail(error.message, 404)
+      }
+      // runId에 경로 순회 문자가 섞인 경우(I-021) — 검증 실패이므로 500이 아니라 400이다.
+      if (error instanceof UnsafePathSegmentError) {
+        return fail(error.message, 400)
       }
       throw error
     }

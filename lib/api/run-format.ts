@@ -63,6 +63,36 @@ export function formatLocalDateTimeSecond(iso: string): string {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`
 }
 
+/**
+ * ISO 8601 문자열을 로컬 "HH:mm" 형식으로 바꾼다(날짜·초 생략). 실행 요약 카드의 모바일 폭과
+ * 기사 파일 목록의 "수집 시각" 열이 이 축약 형식을 쓴다(docs/screens/02-collect-result.md §③·④
+ * 와이어프레임). **I-025 해소**: 이전에는 화면(`run-summary-card.tsx`)이
+ * `formatLocalDateTimeSecond`의 출력 문자열을 `slice(11, 16)`으로 잘라 만들었는데, 그 함수의
+ * 출력 폭이 나중에 바뀌면(타임존 접미사 추가 등) 컴파일 에러도 런타임 예외도 없이 조용히 엉뚱한
+ * 자리를 잘라 틀린 시각을 보여줄 위험이 있었다. `Date`에서 시:분을 직접 조립해 그 결합을 끊는다.
+ */
+export function formatLocalTimeOnly(iso: string): string {
+  const date = new Date(iso)
+  const hh = pad(date.getHours())
+  const mi = pad(date.getMinutes())
+  return `${hh}:${mi}`
+}
+
+/**
+ * ISO 8601 문자열을 로컬 "HH:mm:ss" 형식으로 바꾼다(날짜 생략, 초는 유지). 본문 미리보기
+ * 메타 줄의 모바일 폭이 이 형식을 쓴다(docs/screens/02-collect-result.md §⑤ 모바일 와이어프레임
+ * "14:33:10 수집" — ③의 모바일 축약(`formatLocalTimeOnly`, 초까지 생략)과는 규칙이 다르다).
+ * `formatLocalTimeOnly`와 같은 이유로 다른 포맷 함수의 출력 문자열을 자르지 않고 `Date`에서
+ * 직접 조립한다(I-025 재발 방지).
+ */
+export function formatLocalTime(iso: string): string {
+  const date = new Date(iso)
+  const hh = pad(date.getHours())
+  const mi = pad(date.getMinutes())
+  const ss = pad(date.getSeconds())
+  return `${hh}:${mi}:${ss}`
+}
+
 export interface RunListLabelInput {
   startedAt: string
   targetPressCount: number

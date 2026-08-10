@@ -5,20 +5,11 @@ import { ErrorAlert } from '@/components/common/error-alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { formatLocalDateTimeSecond } from '@/lib/api/run-format'
+import { formatLocalDateTimeSecond, formatLocalTimeOnly } from '@/lib/api/run-format'
 import type { RunSummary } from '@/lib/api/run-client'
 
 export interface RunSummaryCardProps {
   summary: RunSummary
-}
-
-/**
- * "YYYY-MM-DD HH:mm:ss"에서 시:분만 잘라낸다 — 모바일은 날짜·초를 생략한 `HH:mm`로 그린다
- * (설계서 §③ 와이어프레임: 데스크톱 `14:32:05`, 모바일 `14:32`). `formatLocalDateTimeSecond`가
- * 항상 이 형식을 돌려주므로 문자열 자르기로 충분하다 — 별도 포맷 함수를 새로 만들지 않는다.
- */
-function toTimeOnly(formatted: string): string {
-  return formatted.slice(11, 16)
 }
 
 /**
@@ -56,9 +47,7 @@ export function RunSummaryCard({ summary }: RunSummaryCardProps) {
                   <span className="hidden sm:inline">
                     {formatLocalDateTimeSecond(summary.startedAt)}
                   </span>
-                  <span className="sm:hidden">
-                    {toTimeOnly(formatLocalDateTimeSecond(summary.startedAt))}
-                  </span>
+                  <span className="sm:hidden">{formatLocalTimeOnly(summary.startedAt)}</span>
                   {summary.finishedAt && (
                     <>
                       {' → '}
@@ -66,7 +55,7 @@ export function RunSummaryCard({ summary }: RunSummaryCardProps) {
                         {formatLocalDateTimeSecond(summary.finishedAt)}
                       </span>
                       <span className="sm:hidden">
-                        {toTimeOnly(formatLocalDateTimeSecond(summary.finishedAt))}
+                        {formatLocalTimeOnly(summary.finishedAt)}
                       </span>
                     </>
                   )}
@@ -102,6 +91,9 @@ export function RunSummaryCard({ summary }: RunSummaryCardProps) {
                 >
                   실패 {summary.failCount}건
                 </span>
+                {/* 중단으로 요청조차 하지 않은 기사 수(I-023). "실패"라는 낱말을 쓰지 않고
+                    text-destructive도 주지 않는다 — 오류가 아니다(D-029). 0건이면 렌더하지 않는다. */}
+                {summary.skippedCount > 0 && <> · {summary.skippedCount}건 미수집</>}
               </dd>
             </div>
             <div>

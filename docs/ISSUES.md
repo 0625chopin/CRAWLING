@@ -597,3 +597,31 @@ Task 007 파일을 고치지 않고 우회하는 방식이라 영역 경계는 �
 이미 재검증을 통과했다. **018B가 같은 화면을 여는 회차에 닫는 것이 자연스럽다.**
 
 **해소**: 아직.
+
+### I-026 · 설계서 03 스켈레톤의 `RunOption`이 Task 017이 확정한 `RunListItem`을 다시 더미로 선언한다
+
+- 상태: 열림
+- 발견: 12일차 · 크롤 파이프라인(Task 022A 착수 준비 — I-024 계열 재확인)
+- 관련 Task: **Task 022A** · Task 017(실제 타입 소유) · Task 023(스켈레톤 본문 정정)
+- 관련 이슈: **I-024**(설계서 02에서 같은 계열의 문제)
+
+**증상**: `docs/screens/03-hot-keyword.md:423-426`의 마크업 스켈레톤이 분석 대상 run 셀렉터용 더미 타입을
+`interface RunOption { id: string; label: string }`으로 선언하고 `MOCK_RUNS`도 그 모양으로 채운다.
+그런데 이 셀렉터가 실제로 소비할 데이터는 새로 만들 API가 아니라 **Task 017이 10일차에 확정한
+`GET /api/runs`**이고, 그 응답 타입은 `lib/api/run-client.ts`의 `RunListItem`이다 — `id`·`label` 외에
+`startedAt`·`finishedAt`·`status`·`targetPressCount`·`successCount`·`failCount`·`skippedCount` 7개가 더 있다.
+
+**컴파일 단계에서 깨지지는 않는다** — `RunOption`이 `RunListItem`의 부분집합이라 `{ id, label }`만 꺼내
+쓰면 동작한다. **그래서 더 위험하다**: 스켈레톤을 그대로 베끼면 `RunListItem`을 import하는 대신 별도 더미
+인터페이스를 새로 선언하게 되고, 그러면 `status`로 미완료 run을 셀렉터에서 빼거나 `startedAt`으로 정렬을
+보정하는 로직을 넣을 자리가 **애초에 타입에 없어진다.**
+
+**022A가 어떻게 처리해야 하는가**: `RunOption`을 새로 선언하지 말고 `lib/api/run-client.ts`의
+`RunListItem`·`fetchRuns()`를 그대로 import한다(018A가 `run-select.tsx`에서 쓴 방식 그대로).
+`lib/api/keyword-client.ts`는 분석 결과 전용으로 좁히고 run 목록 조회는 `run-client.ts`에 맡긴다.
+
+**함께 확인된 것**: `AnalysisSummary`·`KeywordRankItem`·`PosTag` 세 타입은 `lib/types/keyword.ts`(Task 004)와
+필드명·타입이 한 글자도 어긋나지 않는다 — **스켈레톤을 그대로 옮겨도 안전하다.** 어긋나는 것은
+`RunOption` 하나뿐이다.
+
+**해소**: 아직. 스켈레톤 본문 정정은 I-024와 마찬가지로 Task 023(설계 문서 정정)의 몫이다.

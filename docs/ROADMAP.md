@@ -43,10 +43,10 @@
 | **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 4 | ✅ 완료 |
 | **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 5 | ✅ 완료 |
 | **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 4 | ✅ 완료 |
-| **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 1 | 🟡 진행 중 |
-| **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 2 | 🟡 진행 중 |
+| **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 2 | ✅ 완료 |
+| **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 3 | 🟡 진행 중 |
 | **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 0 | ⬜ 대기 |
-| **합계** | | **25** | **19** | **76%** |
+| **합계** | | **25** | **21** | **84%** |
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -552,7 +552,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ---
 
-## Phase 4: 수집 결과 조회 — `F003` `F004`
+## Phase 4: 수집 결과 조회 — `F003` `F004` ✅
 
 **목표** — 저장된 결과가 실제로 사람이 읽을 수 있는 형태인지 확인하는 화면을 만든다. Phase 5 분석의 입력이 무엇인지 눈으로 보는 단계이기도 하다.
 
@@ -581,8 +581,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 018 · 수집 결과 화면
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F003` `F004` &nbsp;|&nbsp; 선행: Task 017
-- **진행 메모**: 018A 완료(11일차) — `app/results/page.tsx`(`ScreenPlaceholder` 제거) · `components/results/{run-select,run-summary-card}.tsx` · `lib/api/run-client.ts`. 018B의 `article-file-list.tsx`·`article-preview.tsx`는 D-011대로 뼈대만 세워 두었고 선택 상태 채널(`selectedArticleId`·`onSelectArticleId`)까지 `page.tsx`에 뚫어 뒀다 — 018B는 두 컴포넌트 내부만 채우면 된다.
+- [x] 완료 (12일차, 2026-08-11) &nbsp;|&nbsp; 기능 ID: `F003` `F004` &nbsp;|&nbsp; 선행: Task 017
+- **결과물**: `app/results/page.tsx`(`ScreenPlaceholder` 제거) · `components/results/{run-select,run-summary-card,article-file-list,article-preview}.tsx` · `lib/api/run-client.ts`. 018A(11일차)가 페이지 골격·실행 셀렉터·요약 카드와 018B용 뼈대·props 채널을, 018B(12일차)가 두 컴포넌트 내부를 채웠다. **018B는 `app/results/page.tsx`를 한 줄도 고치지 않았다**(D-006·D-011).
+- **남긴 한계**: 요약 카드에 `skippedCount`를 "N건 미수집"으로 노출한다(**I-023**, 설계서 02 반영). 실행 이력 0건과 로딩 스켈레톤은 실데이터를 지울 수 없어 **코드 경로로 판정**했다(교차검증이 정당하다고 확인). 삭제된 언론사 배지는 `press-sources.json`을 임시 변경해 실측하고 원복했다.
 - **참조**: `docs/screens/02-collect-result.md` (전 절 — "정보 구조 결정 근거", "상태별 화면" ①~⑤, "접근성", "마크업 스켈레톤")
 - **생성/수정 파일**
   - `app/results/page.tsx` (수정 — `ScreenPlaceholder` 제거)
@@ -605,11 +606,11 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
   - 실패 건수가 0보다 크면 요약 카드의 실패 수치를 `text-destructive`로 강조하고 destructive `Alert`를 함께 노출한다.
   - 상태 5종(기본/실행 이력 0건/파일 미선택/로딩/부분 실패 run)을 모두 구현한다.
 - **완료 조건 (DoD)**
-  - [ ] `app/results/page.tsx`에서 `ScreenPlaceholder`가 제거되었다.
-  - [ ] 실행을 전환하면 요약·파일 목록·미리보기가 함께 갱신된다.
-  - [ ] 파일 선택 전에는 "파일을 선택하면 본문을 미리 볼 수 있습니다" 안내가 뜬다.
-  - [ ] `[키워드 분석]` 클릭 시 `/keywords?runId=...`로 이동하고 분석 화면의 run 셀렉터가 그 값으로 선택되어 있다(Task 022 완료 후 재확인).
-  - [ ] Playwright MCP로 "실행 선택 → 파일 검색 → 파일 선택 → 본문 확인 → 키워드 분석 이동"을 태우고, 375px 폭에서 세로 스택이 정상인지 확인한다.
+  - [x] `app/results/page.tsx`에서 `ScreenPlaceholder`가 제거되었다.
+  - [x] 실행을 전환하면 요약·파일 목록·미리보기가 함께 갱신된다. — 실측: 실행 전환 시 파일 목록 10→53건, 미리보기는 파일 미선택 상태로 리셋.
+  - [x] 파일 선택 전에는 "파일을 선택하면 본문을 미리 볼 수 있습니다" 안내가 뜬다.
+  - [x] `[키워드 분석]` 클릭 시 `/keywords?runId=...`로 이동한다. — **셀렉터 프리셀렉트 확인은 규정대로 Task 022 완료 후로 유예**(현재 `/keywords`는 아직 `ScreenPlaceholder`).
+  - [x] Playwright MCP로 "실행 선택 → 파일 검색 → 파일 선택 → 본문 확인 → 키워드 분석 이동"을 태우고, 375px 폭에서 세로 스택이 정상인지 확인한다. — 검색은 `?q=`가 실제로 서버에 나가는 것을 `browser_network_requests`로, 본문 개행 보존은 computed `white-space: pre-wrap`으로 확인했다.
 
 **Phase 4 완료 기준 (Exit Criteria)**
 - Phase 3에서 만든 실행 결과를 화면에서 골라 기사 본문까지 읽을 수 있다.
@@ -684,8 +685,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 021 · 키워드 분석 API 및 결과 캐시
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F005` `F006` &nbsp;|&nbsp; 선행: Task 020, Task 017
-- **진행 메모**: 021A 완료(11일차) — `lib/keyword/analyze-run.ts` + `.test.ts`(7건). 계약은 **D-033**. 실제 run(기사 53건)에서 최초 2008ms → 캐시 재조회 3ms를 확인했고 상위 키워드에 `공개`·`적용`·`발표`가 살아 있어 Kiwi 함정 ② 회귀가 없음을 실측했다. 라우트와 필터·재분석은 021B 몫이다.
+- [x] 완료 (12일차, 2026-08-11) &nbsp;|&nbsp; 기능 ID: `F005` `F006` &nbsp;|&nbsp; 선행: Task 020, Task 017
+- **결과물**: `lib/keyword/analyze-run.ts` + `.test.ts`(021A) · `app/api/runs/[runId]/keywords/route.ts` · `lib/keyword/{filter-keywords,keywords-response}.ts` + 각 `.test.ts`(021B). 계약은 **D-033**·**D-035**~**D-038**.
+- **남긴 한계**: `rank`·`ratio`를 API가 채우지 않는다(**D-037**) — 022B가 `index + 1`과 `count / items[0].count`로 계산한다. `force`는 zod가 아니라 문자열 비교라 `?force=1`이 조용히 캐시를 반환한다(**D-036**, 감수하기로 한 것).
 - **참조**: `docs/PRD.md` §KeywordCount, `docs/screens/03-hot-keyword.md` §① 조건 바 · §⑥ 진행 상태
 - **생성/수정 파일**
   - `app/api/runs/[runId]/keywords/route.ts` (신규) — `GET ?minCount&pos&topN&force`
@@ -698,11 +700,11 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
   - **`runtime` export를 두지 않는다**(Node.js가 기본 런타임 — `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/02-route-segment-config/runtime.md`). 첫 요청은 `build()` 1.4초가 얹히지만 기사 200건 기준 총 3~4초 수준이다. **Phase 3의 크롤과 달리 여기서는 요청 안에서 끝내도 된다** — 사용자가 몇 초를 기다리는 것으로 충분하고, 진행 상태를 따로 조회할 필요가 없기 때문이다(3단계 스텝 표시는 클라이언트가 그린다). 실행 시간 상한은 이 프로젝트에 존재하지 않으므로 `maxDuration`을 선언하지 않는다.
   - 존재하지 않는 run, 기사 0건인 run은 각각 404 / 빈 결과 + 안내 메시지로 구분해 응답한다.
 - **완료 조건 (DoD)**
-  - [ ] 최초 호출에서 `keywords.json`이 생성되고, 두 번째 호출은 눈에 띄게 빠르다.
-  - [ ] `?minCount=3`을 주면 3회 미만 키워드가 사라지고 `summary`는 그대로다.
-  - [ ] `?pos=NNP`만 주면 고유명사만 남는다.
-  - [ ] 불용어를 추가한 뒤 `?force=true`로 호출하면 해당 단어가 랭킹에서 사라진다.
-  - [ ] Playwright MCP로 최초 분석 → 필터 변경 → 불용어 추가 → 강제 재분석 순서로 호출해 응답 차이를 확인한다.
+  - [x] 최초 호출에서 `keywords.json`이 생성되고, 두 번째 호출은 눈에 띄게 빠르다. — 실측 최초 1875ms → 캐시 8~50ms.
+  - [x] `?minCount=3`을 주면 3회 미만 키워드가 사라지고 `summary`는 그대로다. — 2412→672건, `summary` 6가지 조합에서 전부 동일.
+  - [x] `?pos=NNP`만 주면 고유명사만 남는다. — 358건, 전 항목 `posTag === 'NNP'`.
+  - [x] 불용어를 추가한 뒤 `?force=true`로 호출하면 해당 단어가 랭킹에서 사라진다. — "보안"(57회) 추가 → 재분석 후 사라지고 `stopwordExcludedCount` 84→141(+57 정확히 일치). 확인 후 원복.
+  - [x] Playwright MCP로 최초 분석 → 필터 변경 → 불용어 추가 → 강제 재분석 순서로 호출해 응답 차이를 확인한다. — 화면이 아직 없어 **실서버 HTTP 동선으로 태웠다**(021A 회차에 확립한 대체 방식). 기사 0건 run은 교차검증이 임시 디렉터리로 별도 확인했다.
 
 ### Task 022 · 핫 키워드 분석 화면
 

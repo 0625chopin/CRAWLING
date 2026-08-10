@@ -43,7 +43,7 @@
 - `lib/crawler/config.ts`의 `concurrency`/`timeoutMs`/`delayMs`는 `.env.local`의 `CRAWL_CONCURRENCY` 등으로 이미 조정 가능하다.
 - **동시성(concurrency)은 화면에 노출하지 않는다.** 대상 언론사 서버에 부담을 주지 않기 위한 안전장치(코드 주석: "대상 서버에 부담을 주지 않는 선에서 설정") 성격이 강해, 매 실행마다 사용자가 건드릴 값이 아니라 환경 단위로 한 번 정해두는 값으로 본다. 화면에 노출하면 1인 로컬 도구라 해도 값을 과도하게 올려 상대 서버에 부담을 줄 위험이 있다.
 - **"언론사당 최대 수집 기사 수"는 노출한다.** 이 값은 서버 부담과 무관하게 "이번 실행에서 얼마나 수집할지"를 결정하는, 실행마다 바뀔 수 있는 테스트 파라미터라 화면 노출이 자연스럽다(기본값 20건, 선택 사항).
-- 현재 `lib/crawler/types.ts`에는 이 값에 대응하는 필드가 아직 없다 → 실제 구현 시 `crawlRequestSchema`(또는 별도 스키마)에 `maxArticlesPerPress` 같은 선택 필드 추가가 필요하다는 점을 마크업 스켈레톤 주석에 남긴다.
+- `maxArticlesPerPress`는 이미 구현돼 있다 — `lib/types/crawl-run.ts:44`의 `crawlStartRequestSchema`(`pressIds`와 함께 크롤링 시작 요청 바디를 이룬다)에 선택 필드로 있다. (19일차, 크롤 파이프라인 발견·화면 정정: 이 문장은 원래 "아직 없으니 나중에 추가해야 한다"고 적혀 있었는데 세 가지가 동시에 틀렸다 — ① 필드는 이미 있고, ② 가리키던 파일(`lib/crawler/types.ts`)이 아니라 `lib/types/crawl-run.ts`가 제자리이며, ③ 가리키던 스키마 이름 `crawlRequestSchema`는 14일차 Task 023이 삭제한 죽은 이름이다(D-039). "미구현" 취지의 문장이 통째로 무효라 완료된 사실로 바꿔 썼다 — 문장을 걷어내면 이 값이 화면에 노출될 스키마 근거 자체가 문서에서 사라지기 때문이다.)
 
 ---
 
@@ -377,6 +377,10 @@
 
 수집 방식 배지(RSS/HTML)는 Task 009가 만드는 `components/press/source-type-badge.tsx`를 재사용한다. 이 화면에서 `sourceType`으로 분기하는 코드를 다시 쓰지 않는다.
 
+### ⚠️ 아래 스켈레톤의 `ScrollArea` 반응형 높이는 세 곳 모두와 함께 고친다 (I-013)
+
+이 스켈레톤은 한때 `h-[420px] pr-3 sm:h-[420px]`로 적혀 있어, 위 §스크롤 처리 결정(37행)·§영역별 컴포넌트 명세(140행)가 요구하는 모바일 `h-[320px]`가 스켈레톤 어디에도 없었다. 실제 구현(`components/crawl/press-select-card.tsx:124`)은 이 스켈레톤을 베끼지 않고 결정 문서·명세 표 쪽을 따라 처음부터 `h-[320px] pr-3 sm:h-[420px]`를 썼으므로 코드 위험은 없었지만, 문서 자체는 어긋난 채로 남아 있었다. 19일차에 `h-[320px] pr-3 sm:h-[420px]`로 정정해 37행·140행·아래 스켈레톤 세 곳을 일치시켰다. **이 값을 다시 바꿀 일이 생기면 세 곳을 함께 고친다** — 한 곳만 고치면 이 이슈가 다시 열린다.
+
 ### 기본 구조 (`app/page.tsx`)
 
 ```tsx
@@ -483,7 +487,7 @@ export default function CrawlRunPage() {
 
             <Separator />
 
-            <ScrollArea className="h-[420px] pr-3 sm:h-[420px]">
+            <ScrollArea className="h-[320px] pr-3 sm:h-[420px]">
               <ul
                 role="group"
                 aria-labelledby="press-select-summary"
@@ -537,7 +541,7 @@ export default function CrawlRunPage() {
                 <Settings2 className="size-3.5 text-muted-foreground" aria-hidden="true" />
                 언론사당 최대 수집 기사 수
               </Label>
-              {/* TODO: crawlRequestSchema에 maxArticlesPerPress 필드 추가 필요 */}
+              {/* TODO: 이 입력값을 crawlStartRequestSchema.maxArticlesPerPress(lib/types/crawl-run.ts)로 상태 관리·전송 필요 */}
               <Input
                 id="max-articles"
                 type="number"

@@ -347,7 +347,9 @@ RSS 테스트의 "요약 길이 평균"은 이 화면에만 있는 판단 보조
         │ └────────────────────────────────────────────────┘ │
 ```
 
-요약 평균 길이에 따라 마지막 안내 문구가 달라진다. **200자 미만이면** "요약이 짧습니다 — 본문 전문 수집을 켜는 것을 권합니다."로 바뀌고, 이때 본문 전문 수집 스위치에 시각적 주의를 준다. 이 수치가 이 화면에서 사용자가 내려야 할 유일한 판단(전문을 긁을지)의 근거다.
+요약 평균 길이에 따라 마지막 안내 문구가 달라진다. **200자 미만이면** "요약이 짧습니다 — 본문 전문 수집을 켜는 것을 권합니다."로 바뀐다. 이 수치가 이 화면에서 사용자가 내려야 할 유일한 판단(전문을 긁을지)의 근거다.
+
+(I-012, 19일차: "이때 본문 전문 수집 스위치에 시각적 주의를 준다"는 문장을 걷어냈다 — 구체 마크업·클래스 스펙이 없었고, 권장 문구가 이미 스위치 이름을 그대로 부르고 있어 스위치 자체를 강조해도 사용자가 새로 얻는 정보가 없다. 색만 바꾸는 강조는 `docs/CONVENTIONS.md` §8의 "색상 단독으로 상태를 전달하지 않는다"와도 충돌한다. 200자 기준과 안내 문구 자체는 그대로 남긴다.)
 
 **피드 테스트 실패**:
 
@@ -483,14 +485,10 @@ RSS 방식:
 
 ## 사용 컴포넌트
 
-**이미 설치됨** (추가 설치 불필요)
-`alert` `badge` `breadcrumb` `button` `card` `input` `navigation-menu` `skeleton` `sonner` `table`
+**설치 완료** (추가 설치 불필요 — `docs/screens/README.md` §화면별 사용 shadcn 컴포넌트가 설치 상태의 단일 소스)
+`alert` `alert-dialog` `badge` `breadcrumb` `button` `card` `dialog` `input` `label` `navigation-menu` `skeleton` `sonner` `switch` `table` `textarea` `toggle-group`
 
-**추가 설치 필요**
-
-```
-npx shadcn@latest add @shadcn/dialog @shadcn/alert-dialog @shadcn/switch @shadcn/label @shadcn/textarea @shadcn/toggle-group
-```
+이 화면이 새로 쓰는 6종의 용도는 아래와 같다.
 
 | 컴포넌트 | 용도 |
 |---------|------|
@@ -501,7 +499,7 @@ npx shadcn@latest add @shadcn/dialog @shadcn/alert-dialog @shadcn/switch @shadcn
 | `textarea` | 본문 셀렉터 입력(여러 후보를 콤마로 적을 여유 공간) |
 | `toggle-group` | **수집 방식(RSS / 목록 페이지) 선택** — `type="single"` |
 
-> `badge`는 이미 설치되어 있고 여기서 수집 방식 배지로 쓴다. `toggle-group`은 `03-hot-keyword.md`가 이미 요구하던 컴포넌트라 전체 설치 명령(`docs/screens/README.md`)은 바뀌지 않는다.
+> `badge`는 수집 방식 배지로 쓴다. (I-010, 19일차: "추가 설치 필요" + 설치 명령 절을 걷어냈다 — `components/ui/`에 6종 실물이 모두 있고 `docs/screens/README.md`가 Task 002에서 13종을 일괄 설치했다고 이미 못 박아 중복이었다. 목록 자체는 쓸모가 있어 지우지 않고 "설치 완료" 목록에 합쳤다.)
 
 **lucide-react 아이콘**: `Plus`(추가) · `Pencil`(수정) · `Trash2`(삭제) · `ChevronRight`/`ChevronDown`(수집 설정 펼침/접힘) · `Info`(안내 Alert) · `Newspaper`(빈 상태 — `EmptyState`의 `icon`) · `FlaskConical`(소스 테스트) · `CircleCheckBig`(테스트 성공) · `CircleX`(테스트 실패) · `Rss`(RSS 방식 배지·토글) · `Globe`(목록 페이지 방식 배지·토글)
 

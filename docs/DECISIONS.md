@@ -275,7 +275,7 @@ POS·길이 필터를 다시 구현하지 않는다. `stopwordExcludedCount`는 
 
 ### D-013 · 언론사 레벨 동시성은 Task 014A가 별도로 제한할지 판단한다
 
-- 상태: 유효(판단 이월)
+- 상태: 해소 (7일차 · D-015로 판단 완료)
 - 결정: 6일차 · 크롤 파이프라인(제기)
 - 영향 Task: Task 014A
 
@@ -311,3 +311,101 @@ DOM에 N개 존재할 뻔한 문제를 피한다.
 **같은 규칙에서 나온 데이터 페칭 관용구**: `useCallback`/`useEffectEvent`로 감싼 함수를 이펙트에서 호출해도
 이 규칙에 걸린다. `useEffect(() => { fetchX().then(setState).catch(setState) }, [dep])` 형태로 **완전히
 인라인**해야 통과한다. Task 016A·018A도 데이터 조회가 필요하니 이 형태를 그대로 쓴다.
+
+### D-015 · 언론사 레벨 동시성은 `pressConcurrency`로 별도 제한한다
+
+- 상태: 유효 (D-013 판단 이월분 해소)
+- 결정: 7일차 · 크롤 파이프라인(Task 014A)
+- 영향 Task: Task 014A
+
+**배경**: `crawlPress`는 언론사 1곳 안에서 `crawlerConfig.concurrency`(기본 2)만큼 동시 페이지를 연다.
+`startRun`이 선택된 언론사 N곳을 전부 병렬로 실행하면 실제 동시 Playwright 페이지 수가 N×2가 된다.
+
+**결정**: `crawlerConfig`에 `pressConcurrency`(기본 3, `CRAWL_PRESS_CONCURRENCY`로 조정)를 추가하고
+`run-manager.ts`가 `pLimit(crawlerConfig.pressConcurrency)`로 언론사 단위 동시 실행 수를 한 번 더 제한한다.
+
+**근거**: `concurrency`는 **대상 서버 1곳**으로 가는 동시 요청을 막는 장치라, 서로 다른 언론사(=서로 다른
+호스트)를 병렬로 돌려도 특정 서버의 부담은 늘지 않는다 — D-013이 우려한 "대상 서버 부담"은 사실 언론사
+수가 늘어도 커지지 않는다. 반면 이 프로세스가 동시에 여는 Playwright 페이지 총량은 **로컬 리소스**이고,
+언론사 등록은 코드 수정 없이 자유로우므로(F007) 무한정 커질 수 있다. 그래서 대상 서버 보호가 아니라
+**로컬 리소스 보호** 목적으로 캡을 씌웠다. **값 3은 실측이 아니라 보수적 추정이다** — 다수 언론사 동시
+크롤 시 메모리 사용량을 재서 조정할 수 있다.
+
+**반영**: `lib/crawler/config.ts` · `lib/crawler/run-manager.ts`.
+
+### D-016 · Task 014A와 014B의 `getRunProgress`·`abortRun` 경계
+
+- 상태: 유효
+- 결정: 7일차 · 크롤 파이프라인(Task 014A)
+- 영향 Task: Task 014A · Task 014B
+
+**배경**: `docs/ROADMAP.md` Task 014는 `startRun`/`getRunProgress`/`abortRun`을 한 블록으로 묶었지만
+work 문서는 014A(잡 레지스트리·백그라운드 실행)와 014B(진행 복구·중단·중복 차단)로 쪼갰다. 두 함수를
+이번 회차에 얼마나 구현할지 경계가 코드로는 드러나지 않는다.
+
+**결정**: 014A는 여기까지만 구현한다.
+- `getRunProgress`: 레지스트리에서 진행 스냅샷을 읽어 반환한다. **서버 재시작으로 레지스트리가 비었을 때
+  `run-meta.json`으로 복구하지 않는다** — 찾지 못하면 예외를 던진다.
+- `abortRun`: `RunJob.aborted` 플래그만 세운다. **크롤 루프가 그 값을 읽어 실제로 멈추는 것,
+  `run-meta.json`에 `aborted`를 쓰는 것, 중복 실행 409 거절은 전부 014B로 넘긴다.** 플래그는 지금
+  아무 동작에도 연결돼 있지 않다.
+
+**근거**: 셋을 절반만 구현하면 "중단했는데 왜 아직 `running`인가" 같은 어중간한 상태가 생긴다. 아무 효과가
+없는 상태로 명확히 남기고 014B가 한 번에 완성하는 편이 상태 불일치를 만들지 않는다.
+
+**반영**: `lib/crawler/run-manager.ts`. Task 014 DoD 5개 중 "중단 후 `status`가 `aborted`"·"서버 재시작 시
+중단된 실행으로 표시" 2개는 014B로 이월한다.
+
+### D-017 · `RunProgress.pressStatuses[].failReason`은 014A가 정형 라벨로 다듬는다
+
+- 상태: 유효
+- 결정: 7일차 · 크롤 파이프라인(Task 014A — 6일차 화면 워크스트림 리뷰 지적 반영)
+- 영향 Task: Task 014A · Task 016B(참고)
+
+**배경**: 화면 설계서 `01-crawl-run.md` §상태별 화면 ⑤는 `failReason`이 **두 단어 정형 라벨**이길
+기대한다(HTML은 `타임아웃`/`셀렉터 불일치`, RSS는 `피드 파싱 실패`/`피드 응답 없음`). 그런데
+`press-crawler.ts`·`fetchHtml`·`fetchFeed`가 만드는 문구는 자유 형식 원문이다
+(`page.goto: Timeout 30000ms exceeded.`, `목록 페이지에서 기사 링크를 찾지 못했습니다(셀렉터를 확인하세요)` 등).
+`RunProgress`를 정의하는 것이 014A라 여기서 판단해야 했다.
+
+**결정**: `run-manager.ts`에 `normalizeFailReason(press, rawError)`을 두어 언론사 전체 실패일 때
+`failReason`을 정형 라벨로 바꾸고, 원문은 `rawFailReason`(신규 필드)에 그대로 남긴다.
+- HTML: `"...링크를 찾지 못했습니다"` 포함 → `셀렉터 불일치`, 그 외 → `타임아웃`
+- RSS: `"...해석할 수 없습니다"`·`"...형식이 아닙니다"` 포함 → `피드 파싱 실패`, 그 외 → `피드 응답 없음`
+
+**근거**: `docs/CONVENTIONS.md` §7("원시 오류를 화면까지 흘리지 않는다. 경계에서 한국어 메시지로 바꾼다").
+`RunProgress`를 만드는 경계가 014A이므로 여기서 다듬지 않으면 016B가 원문을 그대로 뿌리거나 매핑을
+빠뜨린 채 넘어간다. `rawFailReason`은 근사 매핑이 틀렸을 때 원인을 추적하려고 남겼다.
+
+**한계 — 그대로 두기로 한 것 둘**:
+1. **HTML의 `타임아웃`은 근사치다.** `fetchHtml` 실패 사유에는 DNS 실패·연결 거부·인증서 오류도 있는데
+   설계서가 라벨을 둘로 못 박아 전부 `타임아웃`으로 묶였다. 세분화하려면 설계서를 늘려야 한다(화면 몫).
+2. **D-012 계약의 엣지 케이스를 수용했다.** `failures`는 "언론사 전체 실패"와 "링크가 1개였는데 그게
+   개별 실패"를 구분하지 못한다(둘 다 `articles: []` + `failures.length === 1`). `target`이 1인 드문
+   경우에만 라벨 문구가 부정확해지고 해당 언론사가 `failed`로 표시되는 결과 자체는 맞다.
+
+**반영**: `lib/types/crawl-run.ts` · `lib/crawler/run-manager.ts` · `lib/crawler/run-manager.test.ts`(회귀 8건).
+
+### D-018 · Playwright MCP 콘솔 오류 0건 판정 — 의도적으로 태운 4xx·5xx 응답 로그는 제외한다
+
+- 상태: 유효
+- 결정: 7일차 · 팀장(Task 010B 교차검증 중)
+- 영향 Task: Task 010B(반영) · **Task 025(같은 판단이 반드시 다시 필요해지는 지점)**
+
+**배경**: 010B 교차검증에서 리뷰어가 실패 케이스(존재하지 않는 피드 URL·비XML 응답)를 태울 때 콘솔에
+`Failed to load resource: the server responded with a status of 400 @ /api/press/test-source`가 찍혔다.
+이걸 콘솔 오류로 세어 fail로 잡을지 판단이 필요했다.
+
+**결정**: **의도적으로 태운 실패 케이스에서 나오는 4xx·5xx 리소스 로드 로그는 콘솔 오류 0건 판정에서
+제외한다.** 세는 것은 **런타임 예외 · React 에러 바운더리 발동 · 처리되지 않은 Promise rejection**뿐이다.
+
+**근거**:
+1. 브라우저가 실패한 네트워크 응답을 자동 기록한 것이지 앱의 JS가 던진 예외가 아니다 — 스택트레이스도
+   React 에러도 없다.
+2. 화면은 그 응답을 받아 destructive Alert를 정상적으로 그렸다(의도한 동작). 검증 실패를 400으로
+   내려주는 `fail(message, 400)` 구조(§6)를 쓰는 모든 라우트에 이미 있는 특성이라 010B만의 결함이 아니다.
+3. 이 기준이 없으면 검증 실패를 의도적으로 태우는 모든 시나리오가 걸려, **정상 동작을 결함으로 오판한다.**
+
+**Task 025로 이어지는 이유**: Task 025의 DoD가 `browser_console_messages` 에러 0건을 요구하는데, 그
+여정에는 언론사 삭제·크롤 실패 등 의도적 실패가 반드시 포함된다. 이 결정이 없으면 그 회차 담당이
+처음부터 다시 판단하거나 정상 동작을 결함으로 잡는다.

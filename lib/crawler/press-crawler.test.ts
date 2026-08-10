@@ -206,6 +206,36 @@ describe('crawlPress — RSS 본문 전문(contentSelector 있음)', () => {
     expect(result.failures).toHaveLength(1)
     expect(result.failures[0].error).toBe('타임아웃')
   })
+
+  it('링크가 없는 피드 항목은 조용히 버리지 않고 명시적 실패로 기록한다(6일차 리뷰 지적)', async () => {
+    fetchFeedMock.mockResolvedValue({
+      ok: true,
+      url: rssPressFullText.feedUrl,
+      elapsedMs: 1,
+      items: [
+        feedItem({ link: '', title: '링크 없음' }),
+        feedItem({ link: 'https://example.com/a/1', title: '성공' }),
+      ],
+    })
+    fetchHtmlMock.mockImplementation(async ({ url }: { url: string }) =>
+      htmlPage(`<div id="articleBody"><p>${'가'.repeat(60)}</p><p>${'나'.repeat(60)}</p></div>`, url)
+    )
+
+    const onArticleDone = vi.fn()
+    const result = await crawlPress(rssPressFullText, RUN_ID, {}, { onArticleDone })
+
+    // collectRssSummaries(요약만 경로)와 동일하게, 링크 없는 항목도 failures에 값으로 남는다 —
+    // 이전에는 필터로 조용히 버려져 이 배열에도, run-manager의 실패 집계에도 잡히지 않았다.
+    expect(result.articles).toHaveLength(1)
+    expect(result.failures).toHaveLength(1)
+    expect(result.failures[0].error).toBe('피드 항목에 링크가 없습니다')
+
+    // target(전체 항목 수 2)이 진행 도중 바뀌지 않아야 한다 — onArticleDone이 매번 받는
+    // target은 항상 items.length와 같다.
+    expect(onArticleDone).toHaveBeenCalledWith(rssPressFullText.id, 1, 2)
+    expect(onArticleDone).toHaveBeenCalledWith(rssPressFullText.id, 2, 2)
+    expect(onArticleDone.mock.calls.every(([, , target]) => target === 2)).toBe(true)
+  })
 })
 
 describe('crawlPress — HTML(목록 페이지 → 링크 → 본문)', () => {
@@ -238,6 +268,31 @@ describe('crawlPress — HTML(목록 페이지 → 링크 → 본문)', () => {
       'https://example.com/view/?no=2',
     ])
     expect(result.articles[0].title).toMatch(/^기사 제목/)
+  })
+
+  it('maxArticlesPerPress로 자른 개수만큼만 원문 페이지를 요청한다(RSS 본문 전문 경로와 대칭 — 6일차 리뷰 지적)', async () => {
+    const listLinks = Array.from(
+      { length: 10 },
+      (_, i) => `<div class="newsPost"><div class="assetText"><a href="/view/?no=${i}">기사${i}</a></div></div>`
+    ).join('')
+
+    fetchHtmlMock.mockImplementation(async ({ url }: { url: string }) => {
+      if (url === htmlPress.listUrl) {
+        return htmlPage(`<html><body>${listLinks}</body></html>`, htmlPress.listUrl)
+      }
+      return htmlPage(
+        `<div class="news_head"><h1>제목</h1></div><div id="articleBody"><p>${'가'.repeat(60)}</p></div>`,
+        url
+      )
+    })
+
+    await crawlPress(htmlPress, RUN_ID, { maxArticlesPerPress: 3 })
+
+    // 목록 페이지 요청(1회)은 제외하고, 원문 페이지 요청만 센다.
+    const articlePageCalls = (fetchHtmlMock.mock.calls as [{ url: string }][]).filter(
+      ([target]) => target.url !== htmlPress.listUrl
+    )
+    expect(articlePageCalls).toHaveLength(3)
   })
 
   it('목록 페이지 자체를 못 열면 예외 대신 0건·실패 사유를 반환한다', async () => {

@@ -42,3 +42,4 @@ export {
   type PressCrawlOptions,
   type PressCrawlResult,
 } from './press-crawler'
+export { startRun, getRunProgress, abortRun } from './run-manager'

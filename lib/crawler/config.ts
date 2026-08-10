@@ -8,6 +8,14 @@ function readInt(value: string | undefined, fallback: number): number {
 export const crawlerConfig = {
   /** 동시에 열어 둘 페이지 수 상한. 대상 서버에 부담을 주지 않는 선에서 설정한다. */
   concurrency: readInt(process.env.CRAWL_CONCURRENCY, 2),
+  /**
+   * 실행(run) 안에서 동시에 크롤할 언론사 수 상한(D-013). `concurrency`는 언론사 1곳(=대상 서버
+   * 1곳)으로 가는 동시 페이지 수를 막는 안전장치라 서로 다른 언론사를 병렬로 돌려도 특정 서버의
+   * 부담은 늘지 않는다 — 다만 이 프로세스가 동시에 여는 Playwright 페이지 총량(언론사 수 ×
+   * concurrency)은 로컬 리소스이므로, 선택 언론사가 많아져도 무한정 커지지 않도록 여기서 한 번 더
+   * 제한한다(lib/crawler/run-manager.ts가 이 값으로 pLimit를 만든다).
+   */
+  pressConcurrency: readInt(process.env.CRAWL_PRESS_CONCURRENCY, 3),
   /** 페이지 단위 타임아웃(ms). */
   timeoutMs: readInt(process.env.CRAWL_TIMEOUT_MS, 30_000),
   /** 각 요청 사이에 넣는 최소 지연(ms). 과도한 요청을 막는 안전장치. */

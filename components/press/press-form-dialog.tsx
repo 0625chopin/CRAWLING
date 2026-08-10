@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Globe, Rss } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { SourceTestButton, SourceTestResult, useSourceTest } from '@/components/press/source-test-panel'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -95,6 +96,11 @@ export function PressFormDialog({
   const [isActive, setIsActive] = useState(press?.isActive ?? true)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [isSaving, setIsSaving] = useState(false)
+
+  // 소스 테스트(Task 010B)는 저장하지 않은 현재 입력값을 그대로 검증 대상으로 쓴다 —
+  // 방식당 하나뿐이라 반대쪽 방식의 훅 결과는 렌더링하지 않는다.
+  const feedTest = useSourceTest({ sourceType: 'rss', feedUrl })
+  const selectorTest = useSourceTest({ sourceType: 'html', listUrl, articleLinkSelector })
 
   const feedUrlRef = useRef<HTMLInputElement>(null)
   const listUrlRef = useRef<HTMLInputElement>(null)
@@ -273,7 +279,15 @@ export function PressFormDialog({
           {isRss ? (
             <div role="group" aria-label="RSS 수집 설정" className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="press-feed-url">피드 URL *</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="press-feed-url">피드 URL *</Label>
+                  <SourceTestButton
+                    sourceType="rss"
+                    ready={feedTest.ready}
+                    loading={feedTest.state.phase === 'loading'}
+                    onTest={feedTest.run}
+                  />
+                </div>
                 <Input
                   id="press-feed-url"
                   name="feedUrl"
@@ -297,6 +311,7 @@ export function PressFormDialog({
                     ⚠ {fieldErrors.feedUrl}
                   </p>
                 ) : null}
+                <SourceTestResult sourceType="rss" state={feedTest.state} />
               </div>
 
               <div className="space-y-3 rounded-md border p-3">
@@ -384,7 +399,15 @@ export function PressFormDialog({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="press-link-selector">기사 링크 셀렉터 *</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="press-link-selector">기사 링크 셀렉터 *</Label>
+                  <SourceTestButton
+                    sourceType="html"
+                    ready={selectorTest.ready}
+                    loading={selectorTest.state.phase === 'loading'}
+                    onTest={selectorTest.run}
+                  />
+                </div>
                 <Input
                   id="press-link-selector"
                   name="articleLinkSelector"
@@ -407,6 +430,7 @@ export function PressFormDialog({
                     ⚠ {fieldErrors.articleLinkSelector}
                   </p>
                 ) : null}
+                <SourceTestResult sourceType="html" state={selectorTest.state} />
               </div>
 
               <div className="space-y-1.5">

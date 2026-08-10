@@ -220,18 +220,40 @@ async function crawlRssPress(
     return collectRssSummaries(press.id, runId, items, hooks)
   }
 
-  const links = items
-    .filter((item): item is FeedItem & { link: string } => item.link.length > 0)
-    .map((item) => ({ url: item.link, title: item.title }))
+  // 링크 없는 피드 항목은 원문 요청 자체를 시도할 수 없다. collectRssSummaries(174~181행)는
+  // 이 경우를 명시적 실패로 기록하는데, 이 경로는 예전에 필터로 조용히 걸러내기만 해
+  // failures에도 안 남고 onArticleDone도 안 불렸다(6일차 화면 워크스트림 리뷰 지적) —
+  // 같은 모듈이 같은 입력 이상을 두 경로에서 다르게 처리하던 것을 여기서 맞춘다
+  // (docs/CONVENTIONS.md §7 "개별 실패는 예외가 아니라 값으로 격리한다").
+  const linkedItems = items.filter(
+    (item): item is FeedItem & { link: string } => item.link.length > 0
+  )
+  const missingLinkFailures: CrawlFailure[] = items
+    .filter((item) => item.link.length === 0)
+    .map(() => ({ ok: false, url: '', error: '피드 항목에 링크가 없습니다', elapsedMs: 0 }))
+
+  // 진행률(target)은 이 언론사가 원래 처리해야 할 전체 항목 수(items.length)를 유지한다 —
+  // 링크 없는 항목을 먼저 "처리 완료"로 반영한 뒤, collectArticlePages가 보고하는 로컬
+  // 진행(0..linkedItems.length)을 전역 진행(missingLinkFailures.length..items.length)으로
+  // 옮겨 부른다. 그러지 않으면 같은 언론사 진행 중에 target이 items.length →
+  // linkedItems.length로 튀어 화면 진행률이 거꾸로 가는 것처럼 보인다.
+  const target = items.length
+  missingLinkFailures.forEach((_, index) => hooks.onArticleDone?.(press.id, index + 1, target))
+
+  const links = linkedItems.map((item) => ({ url: item.link, title: item.title }))
+  const offsetHooks: PressCrawlHooks = {
+    onArticleDone: (pressId, collected) =>
+      hooks.onArticleDone?.(pressId, missingLinkFailures.length + collected, target),
+  }
   const { articles, failures } = await collectArticlePages(
     press.id,
     runId,
     links,
     press.contentSelector,
     undefined,
-    hooks
+    offsetHooks
   )
-  return { pressId: press.id, articles, failures }
+  return { pressId: press.id, articles, failures: [...missingLinkFailures, ...failures] }
 }
 
 async function crawlHtmlPress(

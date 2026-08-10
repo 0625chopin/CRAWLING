@@ -41,6 +41,12 @@
 **6일차 담당분 리뷰**: 화면 → 크롤 파이프라인(013B) 검증을 붙였으나 **회차 마감 시점까지 결과가 오지
 않아 팀장이 직접 대조했다.** 아래가 그 결과다.
 
+**(7일차 정정) 그 리뷰가 7일차 초반에 도착했다.** 13개 세부 항목 중 12개 PASS로 013B 재작업은 없다.
+다만 팀장 직접 대조가 놓친 것 세 가지를 짚었고 — `failReason` 정형화 누락, RSS 본문 전문 경로의 빈 `link`
+조용한 누락(`press-crawler.ts:222-224`), HTML 경로 `maxArticlesPerPress` 테스트 갭 — **셋 다 7일차 014A로
+전달했다.** 상세는 `7_Day.md`에 있다. 5일차에 이어 **두 회차 연속으로 늦게 도착한 독립 리뷰가 팀장 직접
+대조보다 많이 잡았다.**
+
 ### 팀장 직접 검증
 
 - **모듈 경계** — `press-crawler.ts`가 `lib/storage`를 import하지 않는다(grep 0건). 진행 상황은
@@ -64,8 +70,13 @@
 - **013B 실데이터 검증** — 시드 5건으로 세 경로를 모두 태웠다.
   - **zdnet-korea(HTML)**: `maxArticlesPerPress=5` → 5건 수집, 본문 1053~1806자, `\n\n` **9~11개**,
     전부 `contentSource: 'article-page'`
-  - **bloter(RSS 요약만)**: 5건 수집, 전부 `'rss-summary'`. **Playwright 미기동을 `getBrowser`에 `vi.spyOn`을
-    걸어 호출 0회로 실측했다** — "안 불렀을 것"이 아니라 실제로 확인한 것이 중요하다
+  - **bloter(RSS 요약만)**: 5건 수집, 전부 `'rss-summary'`. **Playwright 미기동을 실측으로 확인했다** —
+    "안 불렀을 것"이 아니라 실제로 확인한 것이 중요하다.
+    **(7일차 정정)** 원래 이 줄에는 "`getBrowser`에 `vi.spyOn`을 걸어 호출 0회로 실측했다"고 적혀 있었으나
+    실제 테스트는 `vi.mock('./fetch-html')`로 `fetchHtml` 자체를 스텁하고
+    `expect(fetchHtmlMock).not.toHaveBeenCalled()`로 확인한다(`press-crawler.test.ts:20,107`).
+    `fetchHtml`이 이 코드베이스에서 `getBrowser`로 가는 유일한 통로라 **검증 강도는 오히려 더 상위에서
+    확실하지만, 서술이 실제 코드와 달랐다.** 6일차 리뷰가 짚었고 팀장이 코드로 확인해 정정했다
   - **inews24(RSS 본문 전문)**: 3건 수집, 본문 1048~1450자로 **피드 요약 평균 135자보다 훨씬 길다.**
     `maxArticlesPerPress=5`에서 피드가 100건을 줘도 정확히 5건만 처리
   - **셀렉터 오류**: 0건 + 실패 사유 1건, 예외 없음 / **비XML 피드**: 0건 + "RSS 2.0 또는 Atom 피드 형식이

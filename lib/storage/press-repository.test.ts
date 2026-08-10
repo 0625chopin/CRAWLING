@@ -34,11 +34,15 @@ afterEach(async () => {
   await fs.rm(tempDir, { recursive: true, force: true })
 })
 
+// category는 Task 026에서 선택 필드 + 기본값 'it-ai'로 추가됐다. z.infer 출력 타입은
+// .default()가 있어도 필수라(I-050과 같은 함정) 여기서 명시하지 않으면 createPress(rssInput)
+// 호출부가 전부 타입체크에서 떨어진다.
 const rssInput = {
   name: 'ZDNet Korea',
   isActive: true,
   sourceType: 'rss' as const,
   feedUrl: 'https://zdnet.co.kr/news/news_xml.asp',
+  category: 'it-ai' as const,
 }
 
 const htmlInput = {
@@ -49,6 +53,7 @@ const htmlInput = {
   articleLinkSelector: '.article-list a.tit',
   titleSelector: 'h1.article-title',
   contentSelector: '#article-view-content-div',
+  category: 'it-ai' as const,
 }
 
 describe('press-repository — 초기 상태', () => {
@@ -226,6 +231,24 @@ describe('press-repository — 목록 조회', () => {
       '나언론',
       '다언론',
     ])
+  })
+
+  // Task 026 — category 미지정 입력은 기본값 it-ai로 저장·반환되고, categories 필터는
+  // 그 값으로 실제 걸러야 한다(GET /api/press?category=... DoD).
+  it('category를 지정하지 않으면 it-ai로 저장·반환된다', async () => {
+    const created = await createPress(rssInput)
+    expect(created.category).toBe('it-ai')
+  })
+
+  it('categories 필터는 지정한 카테고리만 돌려주고, 미지정이면 전체를 돌려준다', async () => {
+    const itAi = await createPress({ ...rssInput, name: 'IT언론' })
+    const sports = await createPress({ ...rssInput, name: '스포츠언론', category: 'sports' })
+
+    expect((await listPress({ categories: ['sports'] })).map((p) => p.id)).toEqual([sports.id])
+    expect((await listPress({ categories: ['economy'] })).map((p) => p.id)).toEqual([])
+    expect((await listPress()).map((p) => p.id).sort()).toEqual(
+      [itAi.id, sports.id].sort()
+    )
   })
 })
 

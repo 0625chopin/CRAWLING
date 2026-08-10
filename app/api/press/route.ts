@@ -1,8 +1,14 @@
 import type { NextRequest } from 'next/server'
+import { z } from 'zod'
 
 import { fail, fieldErrorsFromZod, ok, withErrorBoundary } from '@/lib/api/response'
+import { categoryQuerySchema, readCategoryParams } from '@/lib/api/query-params'
 import { createPress, listPress } from '@/lib/storage/press-repository'
 import { pressCreateSchema, type PressSource } from '@/lib/types/press'
+
+// category 쿼리 하나만 검증하면 되지만, active처럼 단순 boolean이 아니라 5종 enum이라
+// fieldErrorsFromZod로 필드별 한국어 메시지를 내려주려면 zod 스키마를 거쳐야 한다(Task 026).
+const pressListQuerySchema = z.object({ category: categoryQuerySchema })
 
 // Node.js 런타임이 이미 기본값이므로 runtime export를 두지 않는다(docs/CONVENTIONS.md §6,
 // node_modules/next/dist/docs/.../route-segment-config/runtime.md가 제거를 지시한다).
@@ -22,8 +28,18 @@ function withSourceUrl(press: PressSource) {
 
 export async function GET(request: NextRequest) {
   const activeOnly = request.nextUrl.searchParams.get('active') === 'true'
+
+  // ?category=a&category=b 다중 선택(Task 026). 미지정이면 전체 — categories가 undefined로
+  // 남아 listPress가 필터를 걸지 않는다.
+  const parsedQuery = pressListQuerySchema.safeParse({
+    category: readCategoryParams(request.nextUrl.searchParams),
+  })
+  if (!parsedQuery.success) {
+    return fail('입력값을 확인하세요', 400, fieldErrorsFromZod(parsedQuery.error))
+  }
+
   return withErrorBoundary(async () => {
-    const pressList = await listPress({ activeOnly })
+    const pressList = await listPress({ activeOnly, categories: parsedQuery.data.category })
     return ok(pressList.map(withSourceUrl))
   }, '언론사 목록을 불러오지 못했습니다')
 }

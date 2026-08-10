@@ -82,6 +82,18 @@ export const runProgressSchema = z.object({
   currentTarget: z.number().int().nonnegative(),
   pressStatuses: z.array(pressRunStatusSchema),
   /**
+   * 실행 종료 시점의 집계. `run-meta.json`(`CrawlRun`)과 같은 세 값이지만 화면(016B)이
+   * `GET /api/crawl/{runId}` 폴링 하나만으로 완료·부분 실패·중단 요약("기사 N건 저장",
+   * "M건 미수집")을 그릴 수 있어야 해서 여기에도 싣는다 — 이 화면은 `GET /api/runs/{runId}`
+   * (Task 017, 저장소 계층 소유)를 호출하지 않는다(§③ "이 훅이 돌려주는 RunProgress만 그린다").
+   * 진행 중(`status: 'running'`)에는 0으로 유지하다가 `runInBackground`가 종료 직전에
+   * 채운다 — 진행 중 화면은 이 값 대신 `pressStatuses[].collected`/`overallPercent`를 쓴다.
+   * `skippedCount`는 "실패"에 합치지 않는다(I-017) — 화면이 "N건 미수집"으로 따로 쓴다.
+   */
+  successCount: z.number().int().nonnegative(),
+  failCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  /**
    * true면 이 스냅샷이 메모리 잡 레지스트리가 아니라 서버 재시작 뒤 `run-meta.json`·기사 파일
    * 개수로부터 근사 복원한 값이다(`lib/crawler/run-manager.ts`의 `recoverRunProgress`, Task 014B).
    * 이 경우 `pressStatuses[].target`은 실제 목표치가 아니라 `collected`와 같은 값으로 채워진다 —

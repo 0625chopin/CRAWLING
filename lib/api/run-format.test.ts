@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildRunListLabel, formatDurationLabel, formatLocalDateTimeMinute } from './run-format'
+import {
+  buildRunListLabel,
+  formatDurationLabel,
+  formatLocalDateTimeMinute,
+  formatLocalDateTimeSecond,
+} from './run-format'
 
 describe('formatLocalDateTimeMinute', () => {
   it('ISO 문자열을 로컬 "YYYY-MM-DD HH:mm"으로 바꾼다(초 단위는 버린다)', () => {
@@ -13,6 +18,18 @@ describe('formatLocalDateTimeMinute', () => {
   it('한 자리 월·일·시·분을 0으로 채운다', () => {
     const iso = new Date(2026, 0, 5, 9, 3, 0).toISOString()
     expect(formatLocalDateTimeMinute(iso)).toBe('2026-01-05 09:03')
+  })
+})
+
+describe('formatLocalDateTimeSecond', () => {
+  it('ISO 문자열을 로컬 "YYYY-MM-DD HH:mm:ss"로 바꾼다(초 단위를 보존한다)', () => {
+    const iso = new Date(2026, 7, 10, 14, 32, 5).toISOString()
+    expect(formatLocalDateTimeSecond(iso)).toBe('2026-08-10 14:32:05')
+  })
+
+  it('한 자리 월·일·시·분·초를 0으로 채운다', () => {
+    const iso = new Date(2026, 0, 5, 9, 3, 7).toISOString()
+    expect(formatLocalDateTimeSecond(iso)).toBe('2026-01-05 09:03:07')
   })
 })
 

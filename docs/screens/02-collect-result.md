@@ -137,6 +137,8 @@
 | ① 페이지 헤더 | `PageHeader` (`components/common/page-header.tsx`) | 컴포넌트 내부에 `mb-6`, `text-2xl font-semibold tracking-tight md:text-3xl`, `text-sm text-muted-foreground mt-1` | `breadcrumbs`/`title`/`description` prop만 넘긴다. Breadcrumb 링크는 컴포넌트가 `BreadcrumbLink asChild` + `next/link`로 처리하므로 raw `href`를 쓰지 않는다 |
 | ② 실행 선택 | `Label`, `Select`/`SelectTrigger`/`SelectContent`/`SelectItem` | `flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between` | `defaultValue`로 최신 실행을 기본 선택(정적 마크업이므로 uncontrolled) |
 | ③ 실행 요약 카드 | `Card`/`CardHeader`/`CardTitle`/`CardAction`/`CardContent`, `Badge`, `Button` | `grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2` | 저장 경로 `font-mono text-xs`, 실패 건수 `text-destructive`(실패 0건이면 기본색) |
+
+**「수집 결과」 항목에 `skippedCount`를 함께 쓴다** — `skippedCount > 0`일 때만 `성공 53건 · 실패 0건 · 41건 미수집`처럼 보조 문구를 덧붙인다. 중단으로 요청조차 하지 않은 기사 수이며 **"실패"라는 낱말을 쓰지 않는다**(D-029). 화면 01이 §⑧에서 이미 같은 표현을 쓰므로 문구를 그대로 맞춘다(D-030). `text-destructive`를 주지 않는다 — 오류가 아니다. `skippedCount === 0`이면 이 문구 자체를 렌더하지 않는다(I-023).
 | ④ 기사 파일 목록 | `Card`, `Label`+`Input`(검색), `ScrollArea`, `Table` 계열(데스크톱), `ul/li/button`(모바일), `Badge` | 데스크톱 `hidden lg:block`, 모바일 `lg:hidden`, `ScrollArea` `max-h-[28rem]` | 선택 행에 `aria-selected` + `bg-muted` |
 | ⑤ 본문 미리보기 | `Card`, `Separator`, `ScrollArea`, `Button`(icon, 외부 링크) | `whitespace-pre-wrap font-mono text-sm leading-relaxed` | 컨테이너에 `aria-live="polite"`. `whitespace-pre-wrap` 전제는 아래 "본문 개행 보존 전제" 참고 |
 | 빈 상태(실행 이력 0건 / 파일 미선택) | `EmptyState` (`components/common/empty-state.tsx`) | 컴포넌트 내부(`Empty` 프리미티브) | 00-app-shell.md가 정한 01~05 공용 빈 상태 블록. 같은 마크업을 이 화면에서 다시 그리지 않는다 |
@@ -344,6 +346,18 @@ import { ErrorAlert } from '@/components/common/error-alert'
 | ④ 기사 파일 목록(검색 Input · 데스크톱 표 · 모바일 카드 리스트) | `components/results/article-file-list.tsx` (신규) |
 | ⑤ 본문 미리보기(메타 · 본문 출처 배지 · 본문 `ScrollArea` · 파일 미선택 상태) | `components/results/article-preview.tsx` (신규) |
 | 실행 목록·요약·기사 목록·본문 fetch 래퍼 | `lib/api/run-client.ts` (신규) |
+
+### ⚠️ 아래 스켈레톤의 타입 선언을 그대로 베끼지 않는다 (I-024)
+
+스켈레톤이 쓰는 더미 인터페이스는 **실제 API 응답과 다르다.** 마크업·라벨·클래스는 이 문서를 그대로 따르되, **타입은 `lib/api/run-client.ts`(018A가 라우트 구현을 직접 읽고 선언한 것)를 재사용한다.** 어긋나는 지점은 아래 셋이다.
+
+| 스켈레톤 | 실제 응답 | 왜 |
+| --- | --- | --- |
+| `CrawlRunOption.targetPressNames: string[]` | `RunSummary.targetPress: { id, name: string \| null, deleted: boolean }[]` | 삭제된 언론사는 이름을 복구할 수 없어 `name: null` + 플래그로 온다(**D-026**). 화면은 고정 문구 "삭제된 언론사" 배지로 그린다(**D-027**) |
+| `ArticleFileItem.pressName: string` | `pressName: string \| null` + `pressDeleted: boolean` | 같은 이유 |
+| (없음) | `GET /api/runs`는 배열을 그대로, `GET /api/runs/{runId}/articles`는 `{ items, total }`로 감싸 준다 | 두 라우트의 봉투 모양이 다르다 |
+
+`RunSummary.durationLabel`은 `finishedAt`이 없거나 시각이 역전되면 **`null`**이다 — 스켈레톤은 항상 문자열인 것처럼 쓰지만 null 가드가 필요하다.
 
 ### 기본 구조 (`app/results/page.tsx`)
 

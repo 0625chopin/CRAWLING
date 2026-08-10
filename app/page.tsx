@@ -62,6 +62,15 @@ export default function CrawlRunPage() {
   const isRunning = runId !== null
   const isPressEmpty = loadState === 'ready' && pressList.length === 0
 
+  /**
+   * [새로 크롤링하기](설계서 §④·§⑧). runId를 비워 진행 패널을 다시 ①(기본) 상태로 되돌리고,
+   * 선택 상태도 초기화한다 — 방금 끝난 실행의 언론사 선택이 다음 실행에 남아 있지 않게 한다.
+   */
+  const handleReset = useCallback(() => {
+    setRunId(null)
+    setSelectedIds(new Set())
+  }, [])
+
   async function handleStart() {
     setIsStarting(true)
     try {
@@ -111,6 +120,7 @@ export default function CrawlRunPage() {
           maxArticlesPerPress={maxArticlesPerPress}
           onMaxArticlesPerPressChange={setMaxArticlesPerPress}
           onStart={handleStart}
+          onReset={handleReset}
         />
       </div>
     </PageContainer>

@@ -47,6 +47,22 @@ export function formatDurationLabel(
   return `${minutes}분 ${seconds}초`
 }
 
+/**
+ * ISO 8601 문자열을 로컬 "YYYY-MM-DD HH:mm:ss" 형식으로 바꾼다. 초 단위까지 필요한 곳은
+ * 실행 요약 카드의 시작·종료 시각뿐이다(docs/screens/02-collect-result.md §③, Task 018A) —
+ * 셀렉터 라벨(`formatLocalDateTimeMinute`)과 분 단위로 갈리는 이유도 화면 영역이 다르기 때문이다.
+ */
+export function formatLocalDateTimeSecond(iso: string): string {
+  const date = new Date(iso)
+  const yyyy = date.getFullYear()
+  const mm = pad(date.getMonth() + 1)
+  const dd = pad(date.getDate())
+  const hh = pad(date.getHours())
+  const mi = pad(date.getMinutes())
+  const ss = pad(date.getSeconds())
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`
+}
+
 export interface RunListLabelInput {
   startedAt: string
   targetPressCount: number

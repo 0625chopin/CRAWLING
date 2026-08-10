@@ -24,7 +24,7 @@ vi.mock('./paths', async (importOriginal) => {
   }
 })
 
-const { listArticles } = await import('./article-repository')
+const { listArticles, readArticle, ArticleNotFoundError } = await import('./article-repository')
 const { articlesDir, articlePath } = await import('./paths')
 
 beforeEach(async () => {
@@ -121,5 +121,74 @@ describe('article-repository — listArticles 200건 성능', () => {
     )
     expect(items[0].id).toBe('0001')
     expect(items[29].id).toBe('0030')
+  })
+})
+
+describe('listArticles — 손상된 기사 격리와 로그(I-006)', () => {
+  it('메타 라인이 깨진 기사 파일은 건너뛰고 나머지 목록은 정상 반환하며 경고를 남긴다', async () => {
+    await writeFixtures(2, 500) // 0001, 0002 정상 기사
+
+    const brokenId = '0099'
+    await fs.mkdir(articlesDir(RUN_ID), { recursive: true })
+    await fs.writeFile(
+      articlePath(RUN_ID, brokenId),
+      '# id: 0099\n형식이 아닌 줄\n\n본문',
+      'utf-8'
+    )
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const items = await listArticles(RUN_ID)
+
+    expect(items.map((item) => item.id)).toEqual(['0001', '0002'])
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    const [message, error] = warnSpy.mock.calls[0]
+    expect(message).toContain('[article-repository]')
+    expect(message).toContain(`${RUN_ID}/${brokenId}`)
+    expect(error).toBeInstanceOf(Error)
+
+    warnSpy.mockRestore()
+  })
+
+  it('손상된 기사가 없으면 경고를 남기지 않는다', async () => {
+    await writeFixtures(3, 500)
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const items = await listArticles(RUN_ID)
+
+    expect(items).toHaveLength(3)
+    expect(warnSpy).not.toHaveBeenCalled()
+
+    warnSpy.mockRestore()
+  })
+})
+
+describe('readArticle — 없음/손상 타입 구분(I-020)', () => {
+  it('존재하지 않는 기사는 ArticleNotFoundError를 던진다', async () => {
+    await fs.mkdir(articlesDir(RUN_ID), { recursive: true })
+
+    await expect(readArticle(RUN_ID, '9999')).rejects.toThrow(ArticleNotFoundError)
+  })
+
+  it('메타 라인이 깨진(손상된) 기사는 ArticleNotFoundError가 아닌 별개의 오류를 던진다', async () => {
+    const brokenId = '0050'
+    await fs.mkdir(articlesDir(RUN_ID), { recursive: true })
+    await fs.writeFile(
+      articlePath(RUN_ID, brokenId),
+      '# id: 0050\n형식이 아닌 줄\n\n본문',
+      'utf-8'
+    )
+
+    await expect(readArticle(RUN_ID, brokenId)).rejects.toThrow()
+
+    try {
+      await readArticle(RUN_ID, brokenId)
+      expect.unreachable('예외가 던져져야 한다')
+    } catch (error) {
+      // "없음"과 "손상"이 라우트에서 instanceof로 갈리려면 서로 다른 타입이어야 한다 —
+      // 여기서 둘 다 ArticleNotFoundError면 회귀다.
+      expect(error).not.toBeInstanceOf(ArticleNotFoundError)
+    }
   })
 })

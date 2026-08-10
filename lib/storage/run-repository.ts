@@ -112,6 +112,9 @@ export async function createRun(targetPressIds: string[]): Promise<CrawlRun> {
 /**
  * 전체 실행 목록을 최신순으로 돌려준다(화면 설계서 02의 셀렉터 기본값 = 최신 run).
  * run-meta.json 1건이 손상돼도 나머지 목록 조회를 막지 않는다(값 격리 원칙, docs/CONVENTIONS.md §7).
+ * **격리가 침묵이어서는 안 된다**(I-006) — 사용자가 `data/`를 손으로 편집하다 run-meta.json을
+ * 깨뜨리면 그 실행이 이 목록에서 사라지는데, 로그가 없으면 왜 사라졌는지 알 방법이 없었다.
+ * `lib/keyword/analyze-run.ts`가 이미 쓰는 `[모듈명] 설명: 대상` 형식을 그대로 따른다.
  */
 export async function listRuns(): Promise<CrawlRun[]> {
   let entries: string[]
@@ -126,7 +129,12 @@ export async function listRuns(): Promise<CrawlRun[]> {
     entries.map(async (runId) => {
       try {
         return await readRunMeta(runId)
-      } catch {
+      } catch (error) {
+        // readRunMeta는 ENOENT(RunNotFoundError)·JSON 파싱 실패·스키마 불일치를 각각 다른
+        // 메시지의 예외로 던진다. 여기서는 더 세분화하지 않는다 — 셋 다 "이 실행 1건은 목록에
+        // 못 올리니 건너뛴다"는 같은 처리로 이어지고, 어느 경우였는지는 아래 error 객체가
+        // 콘솔에 그대로 남아 확인할 수 있다.
+        console.warn(`[run-repository] 손상된 실행을 건너뜁니다: ${runId}`, error)
         return null
       }
     })

@@ -115,7 +115,7 @@ Press id는 이름에서 만든 슬러그(소문자·영숫자·하이픈)인데
 
 ### I-006 · `listRuns`/`listArticles`가 손상된 개별 파일을 조용히 건너뛴다
 
-- 상태: 열림(낮은 우선순위)
+- 상태: **해결됨**(18일차 · 크롤 파이프라인, 이슈 처리 회차)
 - 발견: 3일차 · 화면(Task 007 교차검증 중)
 - 관련 Task: Task 007 · Task 017
 
@@ -125,6 +125,29 @@ Press id는 이름에서 만든 슬러그(소문자·영숫자·하이픈)인데
 
 리뷰어 권고는 **화면 변경 없이 서버 콘솔에 `console.warn`으로 손상된 runId/articleId를 남기는 것**이다.
 저비용이므로 Task 017 착수 회차에 함께 처리한다.
+
+**해소(18일차, 크롤 파이프라인)**: 리뷰어 권고대로 화면은 건드리지 않고 서버 콘솔 로그만 추가했다.
+`lib/keyword/analyze-run.ts`가 이미 쓰고 있던 `[모듈파일명] 설명: 대상` 형식(같은 종류의 개별 실패 격리
+로그)을 그대로 따라, `run-repository.ts`의 `listRuns`는
+`[run-repository] 손상된 실행을 건너뜁니다: {runId}`를, `article-repository.ts`의 `listArticles`는
+`[article-repository] 손상된 기사를 건너뜁니다: {runId}/{articleId}`를 남긴다 — 둘 다 두 번째 인자로
+원본 `error`를 그대로 넘겨 콘솔에서 ENOENT·JSON 파싱 실패·스키마 불일치를 구분할 수 있게 했다.
+
+두 `catch` 모두 이전에는 **파싱 실패뿐 아니라 읽기 실패·권한 오류까지 구분 없이 한데 뭉뚱그려 `null`로
+삼키고 있었다**(수정 전 `catch { return null }`, 원인 분기가 아예 없었다). 이번에도 원인별로 분기하지는
+않는다 — 어느 원인이든 "이 항목 1건은 목록에 못 올리니 건너뛴다"는 같은 처리로 이어지고, 원인 구분은
+로그에 남긴 `error` 객체로 충분하다고 판단했다(콘솔을 보는 사람이 필요하면 구분 가능).
+
+두 레포지토리(`run-repository.ts`·`article-repository.ts`) 모두 확인하고 같은 패턴으로 고쳤다. 회귀 케이스:
+`run-repository.test.ts`(신규 파일) 3건 · `article-repository.test.ts` 2건. 수정을 되돌려 놓고 4건이
+실제로 빨갛게 실패함을 확인한 뒤 원복했다(고친 코드가 없으면 `console.warn`이 호출되지 않아 테스트가
+잡아낸다).
+
+**손상 파일 실측(dev 3100)**: `data/runs/20260810-224130/run-meta.json`을 깨뜨리자 `GET /api/runs`
+건수가 25→24로, `data/runs/20260810-223041/articles/0005.txt`를 깨뜨리자 `GET
+/api/runs/20260810-223041/articles` 건수가 71→70으로 줄었고 각각 단건 조회는 500으로 응답했다.
+검증 후 `data-backup/`으로 복원하고 `diff -rq`로 완전 동일함을 확인했다(자세한 절차와 수치는
+`docs/DECISIONS.draft.크롤파이프라인.md` 참고).
 
 ### I-007 · `ArticleMeta`/`ArticleListItem` 타입이 `lib/types/`가 아니라 `lib/storage/`에 있다
 
@@ -505,9 +528,10 @@ zdnet-korea 5/24`다. 숫자는 서로 맞지만 **두 가지가 설계서와 �
 
 ### I-020 · `article-repository.ts`의 `readArticle`이 "없음"과 "손상"을 타입으로 구분하지 못한다
 
-- 상태: 열림
+- 상태: **해결됨**(18일차, 저장소 계층) — `readArticle`은 타입으로 갈리고, 소비하던 라우트의
+  D-032 `fs.access` 우회도 걷어냈다.
 - 발견: 10일차 · 저장소 계층(Task 017 구현 중)
-- 관련 Task: Task 007(발생지, 범위 밖이라 직접 고치지 않음) · Task 017(회피 구현)
+- 관련 Task: Task 007(발생지, 범위 밖이라 직접 고치지 않음) · Task 017(회피 구현 → 18일차에 걷어냄)
 
 `lib/storage/article-repository.ts`의 `readArticle(runId, articleId)`는 파일이 없을 때와 메타 라인이
 깨졌을 때(`parseArticle`이 던지는 형식 오류) **둘 다 그냥 `Error`를 던진다.** `run-repository.ts`의
@@ -523,7 +547,40 @@ Task 007 파일을 고치지 않고 우회하는 방식이라 영역 경계는 �
 분기가 이 타입으로 던지게 한다. 그러면 Task 017의 우회를 걷어내고 `instanceof` 판정으로 단순화할 수
 있다. **이 변경은 Task 007 소유 파일이라 크롤 파이프라인의 확인이 필요하다.**
 
-**해소**: 아직. Task 017은 위 회피책으로 DoD를 충족했으므로 블로킹은 아니다.
+**해소(18일차, 크롤 파이프라인 — 부분)**: 제안대로 `lib/storage/article-repository.ts`에
+`ArticleNotFoundError`를 추가했다(`RunNotFoundError`와 같은 형태 — `Error` 상속, 생성자
+`(runId, articleId)`, `name = 'ArticleNotFoundError'`). `readArticle`의 ENOENT 분기가 이제 이 타입으로
+던진다.
+
+**"손상" 쪽에는 전용 타입을 두지 않기로 판단했다.** `withErrorBoundary`(`lib/api/response.ts`)가 이미
+모든 미분류 예외를 `console.error`로 콘솔에 남기고 500 + 정형화된 한국어 메시지로 응답하므로, 손상이
+익명 `Error`로 남아도 조용히 삼켜지지 않는다(`docs/CONVENTIONS.md` §7 충족). 라우트가 필요한 판정은
+"없음(404) vs 그 외 전부(500)" 하나뿐이라 지금 시점에는 세분화된 타입의 소비처가 없다 — 근거는
+`docs/DECISIONS.draft.크롤파이프라인.md`에 자세히 남겼다.
+
+**완전 해소(18일차, 저장소 계층)**: `app/api/runs/[runId]/articles/[articleId]/route.ts`에서
+D-032의 `fs.access` 사전 확인과 그 위의 별도 `try/catch`를 통째로 지우고, `getRun` 이후 바로
+`readArticle`을 부르도록 바꿨다. `readArticle`의 `catch`는 `UnsafePathSegmentError` → 400을 가장
+먼저 가려낸 뒤(I-021·D-045, `articlePath`가 `readArticle` 내부에서 다시 조립되므로 여기서도 나올
+수 있다), `ArticleNotFoundError` → 404(`존재하지 않는 기사입니다`), 그 외는 그대로 던져
+`withErrorBoundary`가 500으로 받는다 — `docs/DECISIONS.draft.크롤파이프라인.md`의 제안 코드
+그대로다.
+
+**실측(18일차, dev 3100)**: `GET /api/runs/20260810-224130/articles/%2e%2e%2f%2e%2e%2fetc` → 400
+`articleId 형식이 올바르지 않습니다`. `GET /api/runs/20260810-224130/articles/9999`(정상 형식·없는
+기사) → 404 `존재하지 않는 기사입니다`. `data/runs/20260810-224130/articles/0002.txt`의 메타
+구분줄을 깨뜨린 뒤 `GET .../articles/0002` → 500 `기사 본문을 불러오지 못했습니다`(목록 조회
+건수도 10 → 9로 값 격리됨을 재확인). `GET .../articles/0001`(정상) → 200 + 본문 그대로. 검증 전
+`data-backup/`이 없음을 먼저 확인하고 `press-sources.json`·`stopwords.json`·`runs/`만 백업한 뒤,
+복원 후 `diff -rq data-backup/runs data/runs`·`diff data-backup/press-sources.json
+data/press-sources.json`·`diff data-backup/stopwords.json data/stopwords.json` 전부 출력 없음(완전
+동일)으로 확인하고 `data-backup/`을 지웠다. `keywords.json` 캐시를 건드리는 요청은 부르지 않아
+`?force=true` 재조회는 필요 없었다.
+
+`fs.access` 제거는 실제 이득이었다 — 파일 시스템 호출이 매 요청 1회 줄었을 뿐 아니라, 걷어내기
+전에는 `try/catch` 블록이 두 겹(존재 확인용 · 본문 읽기용)이었는데 지금은 `readArticle` 하나를
+감싸는 한 겹으로 줄어 판정 로직이 더 단순해졌다. 다른 라우트(`app/api/runs/[runId]/articles/route.ts`
+등)를 확인한 결과 `fs.access` 우회는 이 라우트 한 곳에만 있었다.
 
 ### I-021 · `assertSafeSegment`가 일반 `Error`를 던져 경로 순회 시도가 라우트마다 다른 상태 코드로 응답한다
 
@@ -1232,3 +1289,76 @@ I-029·I-031·I-037을 보류·보류·기각으로 재분류한 것이 이 문�
 **재발 방지**: 워크스트림 보고에 "draft에 남겼다"가 있으면 **팀장이 병합 전에 `ls`로 실물을 확인한다.**
 파일이 없으면 보고서 본문을 근거로 재작성을 지시한다. 소환 프롬프트의 [보고] 항목에 "draft 파일 경로와
 `ls` 확인 결과"를 요구하는 것도 방법이지만, 그건 **I-044**의 절차 개선과 함께 판단한다.
+
+### I-046 · `toThrow(SomeErrorClass)` 어서션은 그 클래스가 사라지면 조용히 완화된다
+
+- 상태: 열림 (낮은 우선순위 · **저비용 수정**)
+- 발견: 18일차 · 화면(I-006·I-020 산출분 교차검증 중 회귀 실험을 하다가)
+- 관련 Task: 없음(전 워크스트림의 vitest 스위트에 걸친 테스트 작성 관례)
+- 관련 결정: D-022 · D-045 · **I-020**
+
+**증상**: vitest의 `expect(...).toThrow(SomeClass)`(`rejects.toThrow` 포함)는 `SomeClass`가 import한 모듈에서
+실제로 export되지 않으면 **`undefined`가 되고, `toThrow(undefined)`는 인자 없는 `toThrow()`와 동치로 완화된다.**
+"이 타입이 던져진다"를 검증하려던 어서션이 **"뭐든 던지기만 하면 통과"로 조용히 내려앉는다.** import 실패도
+타입 오류도 나지 않는다 — 구조분해된 값이 `undefined`인 것은 JS에서 합법이다.
+
+**결과적으로 이 패턴을 쓰는 테스트는 자신이 지키려는 것(전용 예외 타입)이 지워지거나 이름이 바뀌는 가장
+직접적인 회귀를 못 잡는다.**
+
+**발견 경위**: I-020 교차검증에서 소스를 `git stash`로 되돌려 신규 테스트 4건이 실패하는지 확인하던 중,
+"존재하지 않는 기사는 `ArticleNotFoundError`를 던진다" 테스트가 **`ArticleNotFoundError`가 아예 없는 소스에서도
+통과**했다. 같은 이슈의 다른 3건이 여전히 실패해 회귀 자체는 잡혔지만, **그 3건이 없었다면 드러나지 않았다.**
+
+**항상 안전 쪽으로 완화되는 것도 아니다**: 같은 파일의 `.not.toBeInstanceOf(ArticleNotFoundError)` 쪽은
+`undefined`가 되면 `TypeError: The instanceof assertion needs a constructor`로 **실패한다.** 어느 방향으로
+깨지는지가 어서션 형태에 달려 있어 예측하기 어렵다.
+
+**영향 범위** — `.toThrow(<대문자 식별자>)` 전수 검색 결과 **4개 파일 9건**:
+
+| 파일 | 줄 | 예외 클래스 |
+| --- | --- | --- |
+| `lib/crawler/run-manager.test.ts` | 309 · 407 · 415 · 416 · 500 | `RunAlreadyRunningError` · `RunNotAbortableError` · `RunNotFoundError` |
+| `lib/storage/paths.test.ts` | 111 · 112 | `UnsafePathSegmentError` |
+| `lib/storage/article-repository.test.ts` | 171 | `ArticleNotFoundError` |
+| `lib/storage/run-repository.test.ts` | 119 | `RunNotFoundError` |
+
+**5개 예외 클래스 전부가 "없음·충돌·검증 실패를 타입으로 구분한다"는 이 프로젝트의 핵심 오류 처리 관례
+(D-022·D-045·I-020)의 산물이다.** 정확히 그 관례가 지키려는 것을 검증하는 테스트들이 전부 같은 약점을 공유한다.
+
+**고칠 방향**: `toThrow(Type)`을 `toBeInstanceOf(Type)` 별도 어서션으로 바꾼다. `toBeInstanceOf`는 인자가
+`undefined`면 `TypeError`로 **즉시 실패**하므로 — 완화가 아니라 명시적 실패로 깨진다 — 안전한 방향이다.
+같은 파일이 이미 `.not.toBeInstanceOf(...)`를 쓰고 있어 스타일 통일도 함께 얻는다.
+
+**우선순위 낮음**: 이 약점이 실제로 회귀를 놓친 사례는 아직 없고, 발동 조건("예외 클래스가 통째로 삭제되거나
+이름이 바뀐다")이 이 규모의 프로젝트에서 흔한 실수는 아니다. 다만 **9건 각각 한 줄씩 바꾸면 끝나는 저비용
+수정**이므로, 다음에 이 5개 예외 클래스 중 하나를 손대는 회차에 함께 처리하기를 권한다.
+
+### I-047 · 동시 편집 중 dev 서버 `curl` 검증에 일시적 컴파일 500이 섞인다
+
+- 상태: 열림 (**회차 운영 관찰 · 코드 결함 아님**)
+- 발견: 18일차 · 크롤 파이프라인(I-020 교차검증 중)
+- 관련 이슈: I-028(dev 서버가 둘로 갈려 낡은 빌드를 봤다) · I-029(브라우저 공유 간섭)
+
+**증상**: `curl` 6종을 연달아 치는데, 정상 조회 1건이 200으로 통과한 직후 나머지 5건이 전부 이 오류로 500을 냈다.
+
+```
+Error: Export ArticleNotFoundError doesn't exist in target module
+[project]/lib/storage/article-repository.ts [app-route] (ecmascript).
+```
+
+파일을 직접 읽어 `export class ArticleNotFoundError`가 실재함을 확인했고, **1~2초 뒤 재시도하니 바로 정상
+(400/404/200)으로 돌아왔다.**
+
+**원인**: 회차 중 여러 워크스트림이 동시에 `lib/`·`app/` 파일을 편집하므로, **Turbopack이 다른 워크스트림의
+저장 이벤트로 모듈 그래프를 재컴파일하는 찰나에 요청이 들어가면** 컴파일이 끝나지 않은 중간 상태를 잠깐
+보여준다. 공유 dev 서버 + 동시 편집 조합에서만 나타나는 레이스다.
+
+**왜 기록하는가**: 다음 교차검증자가 같은 잔상을 보고 **"저 워크스트림이 export를 빠뜨렸다"고 오판할 수 있다.**
+이번에도 그럴 뻔했다. 판정 절차를 못 박는다 — **500 응답에 `doesn't exist in target module`류 컴파일 오류
+메시지가 담겨 있으면, 파일을 직접 읽어 export 존재를 먼저 확인하고 1~2초 뒤 재시도한 결과로 판정한다.**
+
+**처리**: 사용자 승인으로 `SKILL.md` 3단계(교차검증 루프)에 **「공유 dev 서버에서 관측한 것은 코드의 상태가
+아닐 수 있다」** 절을 추가했다. 이 건만 따로 넣지 않고 **같은 계열 셋을 한자리에 묶었다** — **I-028**(낡은 빌드),
+**I-047**(컴파일 중간 상태), **I-029**(브라우저 탈취). 셋 다 "검증 결과가 환경이 만든 잔상"이라는 같은 함정이고,
+따로 흩어 두면 다음 사람이 그때그때 다시 배운다. `data/`를 한 번에 하나만 잡는 규칙(**I-034**·**I-033**)도
+같은 이유로 함께 적었다.

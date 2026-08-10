@@ -1,9 +1,9 @@
-import fs from 'node:fs/promises'
+import type { Article } from '@/lib/types/article'
 
 import { fail, ok, withErrorBoundary } from '@/lib/api/response'
-import { readArticle } from '@/lib/storage/article-repository'
+import { ArticleNotFoundError, readArticle } from '@/lib/storage/article-repository'
 import { getPress } from '@/lib/storage/press-repository'
-import { articlePath, UnsafePathSegmentError } from '@/lib/storage/paths'
+import { UnsafePathSegmentError } from '@/lib/storage/paths'
 import { getRun, RunNotFoundError } from '@/lib/storage/run-repository'
 
 // Node.js 런타임이 이미 기본값이므로 runtime export를 두지 않는다(docs/CONVENTIONS.md §6).
@@ -11,18 +11,18 @@ import { getRun, RunNotFoundError } from '@/lib/storage/run-repository'
 /**
  * 기사 본문 단건. 화면 설계서 02 §⑤ 본문 미리보기의 데이터 소스다.
  *
- * `readArticle`(Task 007, article-repository.ts)은 파일이 없을 때도 손상됐을 때도 똑같이
- * 평범한 `Error`를 던져 타입으로 구분할 수 없다(run-repository.ts의 `RunNotFoundError`와
- * 달리 전용 클래스가 없다 — 이 파일은 범위 밖이라 고치지 않는다,
- * docs/ISSUES.draft.저장소계층.md에 개선 여지로 남긴다). 그래서 `readArticle`을 부르기 전에
- * `fs.access`로 파일 존재만 먼저 확인해 404를 가른다 — 그 뒤에 readArticle이 던지는 예외는
- * "파일은 있는데 형식이 깨졌다"는 뜻이므로 조용히 삼키지 않고 500으로 넘긴다(docs/CONVENTIONS.md
- * §7 "파일 파싱 실패는 조용히 덮어쓰지 않는다").
+ * `readArticle`(Task 007, article-repository.ts)이 이제 "없음"을 `ArticleNotFoundError`로
+ * 던진다(I-020 해소, docs/DECISIONS.draft.크롤파이프라인.md) — 이전에는 파일 없음과 메타 라인
+ * 손상을 똑같은 `Error`로 던져 타입으로 구분할 수 없었고, `readArticle` 호출 전에 `fs.access`로
+ * 존재만 먼저 확인하는 우회(D-032)가 필요했다. 그 우회를 걷어내고 `readArticle` 호출 한 번으로
+ * 줄였다. "손상"(메타 라인 형식 불일치 등)은 여전히 전용 타입이 없는 익명 `Error`이므로 그대로
+ * 흘려보내 `withErrorBoundary`가 500으로 받는다(docs/CONVENTIONS.md §7 "파일 파싱 실패는 조용히
+ * 덮어쓰지 않는다").
  *
- * articleId에 경로 순회 문자가 섞이면 `articlePath`가 `UnsafePathSegmentError`를 던진다(I-021).
- * 이전에는 이 예외까지 아래 `catch`가 뭉뚱그려 404로 답했는데, 그건 D-032의 우회가 우연히 낸
- * 값이지 의도된 설계가 아니었다 — 검증 실패이므로 400이 맞다. `UnsafePathSegmentError`만 먼저
- * 가려내고 나머지(진짜 파일 없음)만 404로 유지한다.
+ * articleId에 경로 순회 문자가 섞이면 `articlePath`가 `UnsafePathSegmentError`를 던진다(I-021,
+ * D-045) — `articlePath` 조립이 `readArticle` 내부에서 다시 일어나므로 이 catch에서도 나올 수
+ * 있다. `ArticleNotFoundError`보다 먼저 가려내지 않으면 경로 순회 입력이 "없는 기사"로
+ * 뭉뚱그려진다.
  */
 export async function GET(
   _request: Request,
@@ -44,17 +44,21 @@ export async function GET(
       throw error
     }
 
+    let article: Article
     try {
-      await fs.access(articlePath(runId, articleId))
+      article = await readArticle(runId, articleId)
     } catch (error) {
+      // articleId에 경로 순회 문자가 섞인 경우(I-021) — ArticleNotFoundError보다 먼저 가려내야
+      // "없는 기사"로 뭉뚱그려지지 않는다(D-045).
       if (error instanceof UnsafePathSegmentError) {
         return fail(error.message, 400)
       }
-      // articlePath 조립 자체는 통과했는데 fs.access가 실패한 경우 — 진짜 없는 기사다.
-      return fail('존재하지 않는 기사입니다', 404)
+      if (error instanceof ArticleNotFoundError) {
+        return fail('존재하지 않는 기사입니다', 404)
+      }
+      throw error // 손상 — withErrorBoundary가 500으로 받는다
     }
 
-    const article = await readArticle(runId, articleId)
     const press = await getPress(article.pressId)
 
     return ok({

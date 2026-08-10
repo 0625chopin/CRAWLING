@@ -333,6 +333,10 @@ DOM에 N개 존재할 뻔한 문제를 피한다.
 
 **반영**: `lib/crawler/config.ts` · `lib/crawler/run-manager.ts`.
 
+**교차 참조(15일차, 화면 Task 024)**: `config.ts:12`의 `pressConcurrency` 주석이 이 결정이 아니라
+이월된 질문인 D-013을 인용하고 있었다. 실제로 `pressConcurrency`를 도입하고 코드에 반영한 결정은
+D-013이 아니라 이 D-015이므로, 주석이 가리키는 번호를 D-015로 정정했다.
+
 ### D-016 · Task 014A와 014B의 `getRunProgress`·`abortRun` 경계
 
 - 상태: 유효

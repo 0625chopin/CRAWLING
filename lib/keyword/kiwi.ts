@@ -48,7 +48,13 @@ function isEnoent(error: unknown): error is NodeJS.ErrnoException {
   )
 }
 
-/** 함정 ③ — 모델 버전은 패키지 버전(0.23.0)과 정확히 맞아야 한다. 경량 대체 모델은 없다. */
+/**
+ * 함정 ③ — 모델 버전은 패키지 버전(0.23.0)과 정확히 맞아야 한다. 경량 대체 모델은 없다.
+ *
+ * 이 명령 목록은 README.md의 「Kiwi 모델 배치」 절과 항상 같아야 한다 — 이 에러 메시지가
+ * "모델이 없는 사람"을 실제로 데려가는 유일한 경로다. clone 직후에는 data/kiwi-model/ 자체가
+ * 없으므로(.gitignore가 /data를 제외) mkdir을 빠뜨리면 마지막 cp가 목적지 부재로 조용히 실패한다.
+ */
 function buildModelMissingMessage(missingFiles: string[]): string {
   return [
     `Kiwi 형태소 분석 모델을 찾을 수 없습니다. (누락된 파일: ${missingFiles.join(', ')})`,
@@ -57,6 +63,7 @@ function buildModelMissingMessage(missingFiles: string[]): string {
     '재다운로드 명령:',
     `curl -L -o kiwi_model.tgz https://github.com/bab2min/Kiwi/releases/download/v${MODEL_VERSION}/kiwi_model_v${MODEL_VERSION}_base.tgz`,
     'tar -xzf kiwi_model.tgz',
+    'mkdir -p data/kiwi-model',
     'cp models/cong/base/* data/kiwi-model/',
   ].join('\n')
 }

@@ -523,3 +523,77 @@ Task 007 파일을 고치지 않고 우회하는 방식이라 영역 경계는 �
 `failed`·`failReason`까지 복원하게 한다. 담당은 크롤 파이프라인이며 016B 착수를 막지는 않는다.
 
 **해소**: 아직.
+
+### I-023 · 수집 결과 화면(02)의 실행 요약 카드에 `skippedCount`를 보여줄 자리가 없다
+
+- 상태: 해결됨(설계서 반영) · 구현은 018B 회차
+- 발견: 11일차 · 화면(Task 018A)
+- 관련 Task: Task 018A(발견) · **Task 018B(구현)** · Task 022A(같은 요약을 다시 쓰면 같은 함정)
+- 관련 결정: D-029 · D-030
+
+**증상**: `GET /api/runs/{runId}`는 `skippedCount`(중단으로 요청조차 하지 않은 기사 수)를 내려주는데
+`docs/screens/02-collect-result.md`의 ③ 실행 요약 카드에는 이 값을 보여줄 자리가 없었다. `aborted`로
+끝난 실행(예: `20260810-211414`, `skippedCount: 41`)을 선택해도 화면은 "성공 53건 · 실패 0건"만 보여주고
+**41건이 왜 비는지 알려주지 않는다.**
+
+**왜 코드로 먼저 정하지 않았는가**: `docs/CONVENTIONS.md` §8("설계서에 없는 UI를 지어내지 않는다")에
+걸린다. 018A는 `skippedCount`를 아예 렌더하지 않고 이슈로 올렸다 — 그 판단이 옳다.
+
+**해소**: 11일차 마감. 팀장이 `docs/screens/02-collect-result.md` §영역별 컴포넌트 명세 ③에
+`skippedCount > 0`일 때만 `성공 53건 · 실패 0건 · 41건 미수집` 보조 문구를 덧붙이도록 반영했다.
+화면 01이 §⑧에서 쓰는 표현을 그대로 맞췄고(D-030), **"실패"라는 낱말을 쓰지 않으며 `text-destructive`도
+주지 않는다** — 오류가 아니기 때문이다(D-029). **구현은 같은 화면을 여는 018B 회차가 맡는다.**
+
+### I-024 · `docs/screens/02-collect-result.md`의 마크업 스켈레톤 타입이 실제 API 응답과 다르다
+
+- 상태: 해결됨(설계서에 경고 반영) · 스켈레톤 본문 정정은 Task 023
+- 발견: 9일차(D-026 본문에서 처음 지적) · 재확인: 11일차 · 화면(Task 018A)
+- 관련 Task: Task 018A · **Task 018B · Task 022** · Task 023(문서 정정)
+- 관련 결정: D-026 · D-027
+
+**증상**: 설계서 02의 스켈레톤은 `interface CrawlRunOption { targetPressNames: string[] }` ·
+`interface ArticleFileItem { pressName: string }`로 선언돼 있다. 실제 응답은
+`targetPress: { id, name: string | null, deleted: boolean }[]`와 `pressName: string | null` +
+`pressDeleted: boolean`이다(삭제된 언론사 대응 — D-026·D-027). **스켈레톤 타입을 그대로 베끼면 컴파일
+단계에서 어긋난다.** 봉투 모양도 갈린다 — `GET /api/runs`는 배열을 그대로, `GET /api/runs/{runId}/articles`는
+`{ items, total }`로 감싼다. `RunSummary.durationLabel`은 `null`일 수 있는데 스켈레톤은 항상 문자열로 쓴다.
+
+**018A가 어떻게 처리했는가**: `lib/api/run-client.ts`에 스켈레톤의 더미 인터페이스 대신 실제 응답
+타입(`RunListItem`·`RunSummary`·`RunTargetPress`·`ArticleFileEntry`·`ArticleFileDetail`)을
+`app/api/runs/**/route.ts` 구현을 직접 읽어 새로 선언했다. **마크업·라벨은 설계서를 따르되 타입은
+코드가 이기는 쪽으로 갔다.**
+
+**해소**: 11일차 마감. 팀장이 설계서 02 「마크업 스켈레톤」 앞에 **"아래 스켈레톤의 타입 선언을 그대로
+베끼지 않는다"** 경고와 어긋나는 세 지점의 대조표를 넣었다. **스켈레톤 코드 블록 자체의 정정은 Task
+023(설계 문서 정정)의 몫으로 남긴다** — 지금 본문을 고치면 마크업까지 함께 손대게 되어 018B가 참조하는
+단일 소스가 회차 도중에 흔들린다.
+
+### I-025 · `toTimeOnly()`가 `formatLocalDateTimeSecond`의 출력 문자열 폭에 인덱스로 결합돼 있다
+
+- 상태: 열림
+- 발견: 11일차 · 화면(Task 018A 구현) → 저장소 계층(재검증·등재)
+- 관련 Task: Task 017(발생지, `lib/api/run-format.ts`) · Task 018A(소비처) · **Task 018B(닫기 좋은 자리)**
+- 관련 결정: D-025 · D-031
+
+**증상**: `components/results/run-summary-card.tsx`의 `toTimeOnly(formatted)`가
+`formatted.slice(11, 16)`으로 `"YYYY-MM-DD HH:mm:ss"`에서 `HH:mm`만 잘라낸다(설계서 §③이 모바일에
+축약 포맷을 요구하기 때문이다). **함수 하나의 출력 문자열 "폭"에 다른 파일이 고정 인덱스로 의존하는
+결합이고, 타입 시스템은 둘 다 `string`이라 이 관계를 표현하지 못한다.**
+
+**왜 위험한가**: `formatLocalDateTimeSecond`의 출력 형식을 나중에 바꾸면(타임존 접미사 추가 등)
+컴파일 에러도 런타임 예외도 없이 **조용히 엉뚱한 자리를 잘라 틀린 시각을 보여준다.**
+`docs/CONVENTIONS.md` §9가 vitest 대상으로 지목하는 "틀려도 화면이 멀쩡해 보이는 로직"에 정확히
+해당하는데, **`.tsx` 안의 지역 함수라 그 그물에 걸리지 않는다** — 이 프로젝트는 컴포넌트 렌더링
+테스트를 도입하지 않으므로 자동으로 잡을 방법이 없다.
+
+**지금은 안전하다**: `pad()`가 월·일·시·분·초를 2자리로 고정해 출력 폭이 항상 19자다. 11일차
+재검증에서 1280px·375px 양쪽을 실제로 태워 `slice(11, 16)`이 정확히 `HH:mm`을 가리키는 것을 확인했다.
+**깨져 있는 상태가 아니라 잠재 위험을 기록해 두는 것이다.**
+
+**제안**: `lib/api/run-format.ts`에 `formatLocalTimeOnly(iso)`를 정식 함수로 추가하고 화면이 슬라이스
+대신 그것을 호출한다. 그러면 이 관계가 `run-format.test.ts`의 정상적인 회귀 대상이 된다.
+
+**왜 이번 회차에 고치지 않았는가**: 소비처가 화면 영역 파일이라 두 영역이 함께 손봐야 하고, 018A는
+이미 재검증을 통과했다. **018B가 같은 화면을 여는 회차에 닫는 것이 자연스럽다.**
+
+**해소**: 아직.

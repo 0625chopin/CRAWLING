@@ -42,11 +42,11 @@
 | **Phase 0** | 완료된 기반 (프로젝트 골격·앱 셸·Kiwi 검증) | 3 (001–003) | 3 | ✅ 완료 |
 | **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 4 | ✅ 완료 |
 | **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 5 | ✅ 완료 |
-| **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 3 | 🟡 진행 중 |
+| **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 4 | ✅ 완료 |
 | **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 1 | 🟡 진행 중 |
 | **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 2 | 🟡 진행 중 |
 | **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 0 | ⬜ 대기 |
-| **합계** | | **25** | **18** | **72%** |
+| **합계** | | **25** | **19** | **76%** |
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -412,7 +412,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ---
 
-## Phase 3: 크롤 파이프라인 — `F001` `F002` `F003`
+## Phase 3: 크롤 파이프라인 — `F001` `F002` `F003` ✅
 
 **목표** — 지금의 범용 페처와 Task 010의 RSS 파서를 **언론사 단위 오케스트레이터**로 감싸, "체크한 언론사 → (RSS 피드 또는 목록 페이지) → 기사 URL → 기사 본문 → txt 저장"을 한 번의 실행(run)으로 끝낸다. 진행 상태를 실시간으로 보여주는 것까지가 이 Phase다.
 
@@ -513,8 +513,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 016 · 크롤링 실행 화면 (홈)
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F001` `F002` `F003` `F007` &nbsp;|&nbsp; 선행: Task 015, Task 009
-- **진행 메모**: 016A 완료(10일차) — `app/page.tsx`(`ScreenPlaceholder` 제거) · `components/crawl/{press-select-card,crawl-run-panel}.tsx` · `lib/api/crawl-client.ts`. 설계서 상태 ①②⑥⑦을 구현했고 ③④⑤⑧은 016B 몫이다. `crawl-run-panel.tsx`는 D-011대로 016B가 내부만 채우도록 뼈대로 만들어 두었다(016B가 `app/page.tsx`를 다시 열지 않는다).
+- [x] 완료 (11일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F001` `F002` `F003` `F007` &nbsp;|&nbsp; 선행: Task 015, Task 009
+- **결과물**: `app/page.tsx`(`ScreenPlaceholder` 제거) · `components/crawl/{press-select-card,crawl-run-panel,press-run-status-list}.tsx` · `lib/api/crawl-client.ts`. 016A(10일차)가 ①②⑥⑦과 `crawl-run-panel.tsx` 뼈대를, 016B(11일차)가 ③④⑤⑧ 내부를 채웠다. 016B는 D-011대로 `app/page.tsx`에 `onReset` 핸들러 한 개만 얹었다.
+- **남긴 한계**: 화면이 폴링 응답만으로 완료 요약을 그리도록 `RunProgress`에 `successCount`·`failCount`·`skippedCount`를 추가했다(**D-034**). 서버 재시작 후 복구된 진행 상태는 언론사 실패를 표현하지 못해(**I-022**) 그 경우 언론사별 상세 대신 런 레벨 안내를 쓴다. `status: 'failed'`(전체 실패) 전용 화면 상태가 설계서에 없어 ⑤부분 실패 마크업을 재사용한다.
 - **참조**: `docs/screens/01-crawl-run.md` (전 절 — "상태별 화면" ①~⑦, "접근성", "마크업 스켈레톤")
 - **생성/수정 파일**
   - `app/page.tsx` (수정 — `ScreenPlaceholder` 제거)
@@ -537,12 +538,12 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
   - 완료 시 `sonner` 토스트("크롤링 완료 — 기사 N건 저장"), 부분 실패 시 warning 톤 + destructive `Alert`.
   - 상태 **8종**(기본/일부 선택/진행 중/완료/부분 실패/언론사 0건/목록 로딩 **+ 중단됨**)을 모두 구현한다. ⑧ 중단됨은 10일차에 **D-030**으로 추가됐다(I-019) — 완료 조각을 `status`로 재사용하고 `skippedCount`를 "N건 미수집"으로 쓴다. 설계서 §⑧이 문안·아이콘·파생 판정까지 확정해 두었다.
 - **완료 조건 (DoD)**
-  - [ ] `app/page.tsx`에서 `ScreenPlaceholder`가 제거되었다.
-  - [ ] 언론사 0건이면 `Inbox` 빈 상태와 `[언론사 관리로 이동]` 버튼이 뜨고 실행 버튼이 비활성이다.
-  - [ ] 언론사 2곳을 체크하고 실행하면 진행률·현재 언론사·언론사별 상태가 눈에 보이게 갱신된다.
-  - [ ] 완료 후 `[수집 결과 보기]`가 `/results`로 이동하고, `data/runs/{runId}/articles/`에 txt 파일이 실제로 쌓여 있다.
-  - [ ] 중단 버튼을 누르면 진행이 멈추고 그때까지의 결과가 보존된다.
-  - [ ] Playwright MCP로 "체크 → 실행 → 진행 관찰 → 완료 → 결과 페이지 이동" 전체를 태운다.
+  - [x] `app/page.tsx`에서 `ScreenPlaceholder`가 제거되었다.
+  - [x] 언론사 0건이면 `Inbox` 빈 상태와 `[언론사 관리로 이동]` 버튼이 뜨고 실행 버튼이 비활성이다. — 활성 언론사 4곳이 실제로 등록돼 있어 코드 경로 대조로 판정했다(공유 검증 자산인 `press-sources.json`을 비울 수 없다).
+  - [x] 언론사 2곳을 체크하고 실행하면 진행률·현재 언론사·언론사별 상태가 눈에 보이게 갱신된다. — 실측 "전체 진행률 78% / 현재: 아이뉴스24 — 18/20건".
+  - [x] 완료 후 `[수집 결과 보기]`가 `/results`로 이동하고, `data/runs/{runId}/articles/`에 txt 파일이 실제로 쌓여 있다. — 실측 `20260810-222551`에 파일 40개(`successCount`와 일치).
+  - [x] 중단 버튼을 누르면 진행이 멈추고 그때까지의 결과가 보존된다. — 실측 `successCount: 71 · skippedCount: 23`, 화면 수치와 일치.
+  - [x] Playwright MCP로 "체크 → 실행 → 진행 관찰 → 완료 → 결과 페이지 이동" 전체를 태운다. — 완료 후 폴링이 멈추는 것도 `browser_network_requests`로 확인했다.
 
 **Phase 3 완료 기준 (Exit Criteria)**
 - 홈에서 언론사를 골라 실행하면 `data/runs/{runId}/`에 `run-meta.json`과 기사 txt가 만들어진다.
@@ -581,6 +582,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 ### Task 018 · 수집 결과 화면
 
 - [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F003` `F004` &nbsp;|&nbsp; 선행: Task 017
+- **진행 메모**: 018A 완료(11일차) — `app/results/page.tsx`(`ScreenPlaceholder` 제거) · `components/results/{run-select,run-summary-card}.tsx` · `lib/api/run-client.ts`. 018B의 `article-file-list.tsx`·`article-preview.tsx`는 D-011대로 뼈대만 세워 두었고 선택 상태 채널(`selectedArticleId`·`onSelectArticleId`)까지 `page.tsx`에 뚫어 뒀다 — 018B는 두 컴포넌트 내부만 채우면 된다.
 - **참조**: `docs/screens/02-collect-result.md` (전 절 — "정보 구조 결정 근거", "상태별 화면" ①~⑤, "접근성", "마크업 스켈레톤")
 - **생성/수정 파일**
   - `app/results/page.tsx` (수정 — `ScreenPlaceholder` 제거)
@@ -683,6 +685,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 ### Task 021 · 키워드 분석 API 및 결과 캐시
 
 - [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F005` `F006` &nbsp;|&nbsp; 선행: Task 020, Task 017
+- **진행 메모**: 021A 완료(11일차) — `lib/keyword/analyze-run.ts` + `.test.ts`(7건). 계약은 **D-033**. 실제 run(기사 53건)에서 최초 2008ms → 캐시 재조회 3ms를 확인했고 상위 키워드에 `공개`·`적용`·`발표`가 살아 있어 Kiwi 함정 ② 회귀가 없음을 실측했다. 라우트와 필터·재분석은 021B 몫이다.
 - **참조**: `docs/PRD.md` §KeywordCount, `docs/screens/03-hot-keyword.md` §① 조건 바 · §⑥ 진행 상태
 - **생성/수정 파일**
   - `app/api/runs/[runId]/keywords/route.ts` (신규) — `GET ?minCount&pos&topN&force`

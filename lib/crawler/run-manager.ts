@@ -228,6 +228,13 @@ async function runInBackground(
   const failCount = counts.reduce((sum, count) => sum + count.failCount, 0)
   const skippedCount = counts.reduce((sum, count) => sum + count.skippedCount, 0)
 
+  // 종료 직전에야 채운다 — 화면(016B)의 완료/부분 실패/중단 요약이 폴링 하나로 이 값을
+  // 읽는다(runProgressSchema 주석). 진행 중에는 0인 채로 두어도 진행 중 화면은 이 필드를
+  // 쓰지 않으므로 문제가 없다.
+  progress.successCount = successCount
+  progress.failCount = failCount
+  progress.skippedCount = skippedCount
+
   const finished = await finishRun(runId, { successCount, failCount, skippedCount })
   // finishRun은 실패 건수로만 done/failed/partial-failed를 산출한다(D-007 ③) — 'aborted'는
   // 그 계산 밖이라 여기서 덮어쓴다. successCount/failCount/finishedAt은 finishRun이 이미 기록한
@@ -282,6 +289,9 @@ export async function startRun(input: CrawlStartRequest): Promise<{ runId: strin
     currentCollected: 0,
     currentTarget: 0,
     pressStatuses,
+    successCount: 0,
+    failCount: 0,
+    skippedCount: 0,
   }
 
   const job: RunJob = { runId: run.id, aborted: false, progress }
@@ -340,6 +350,11 @@ async function recoverRunProgress(runId: string): Promise<RunProgress> {
     currentCollected: 0,
     currentTarget: 0,
     pressStatuses,
+    // run-meta.json이 이미 들고 있는 최종 집계다 — 복구 경로도 화면(016B)의 완료 요약에
+    // 필요한 값이라 재구성해서 만들지 않고 그대로 옮긴다(runProgressSchema 주석).
+    successCount: finalRun.successCount,
+    failCount: finalRun.failCount,
+    skippedCount: finalRun.skippedCount,
     // 레지스트리가 아니라 디스크에서 재구성한 스냅샷임을 알린다 — pressStatuses[].target이
     // 실제 목표치가 아니라 collected와 같은 근사값이라는 뜻이다(위 함수 doc 참고, 8일차
     // 교차검증 후속). 화면은 이 플래그로 "확정 완료"가 아니라 "복구된 값"임을 구분해 그릴 수 있다.

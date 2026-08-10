@@ -734,3 +734,58 @@ runId를 `run-repository.getRun`(fs 읽기, 비동기)으로 복구해야 한다
 이 try/catch에 걸려 404가 된다 — 그게 **I-021**(경로 순회 시도의 상태 코드가 라우트마다 갈린다)의 한쪽
 사례다. 전용 `ArticleNotFoundError`(I-020)와 `UnsafePathSegmentError`(I-021)가 도입되면 이 우회는 함께
 걷어낸다.
+
+### D-033 · `analyzeRun`은 `{ file, skippedArticleCount }`를 반환하고 `lib/keyword/index.ts` 배럴을 거치지 않는다
+
+- 상태: 유효
+- 결정: 11일차 · 저장소 계층(Task 021A)
+- 영향 Task: Task 021A(반영) · **Task 021B(이 계약 위에 라우트를 만든다)**
+
+**배경**: ROADMAP Task 021 구현 규칙은 "개별 기사 실패를 예외로 터뜨리지 말되 조용히 삼키지도 말라"고
+요구했다. 그런데 `keywords.json`의 파일 구조(`{ runId, analyzedAt, summary, items }`)는 Task 007이 이미
+확정했고, 여기에 실패 건수를 끼워 넣으면 `keywordsFileSchema`(저장 포맷, 크롤 파이프라인 소유)를 여는
+일이 된다.
+
+**결정**
+1. `analyzeRun(runId, options?)`은 `Promise<{ file: KeywordsFile, skippedArticleCount: number }>`를
+   반환한다. **저장 포맷은 건드리지 않고 실패 건수를 반환값에만 얹는다.**
+   `skippedArticleCount`는 **이번 호출에서 새로 건너뛴 수**이지 누적이 아니다 — 캐시를 그대로 읽은
+   호출은 기사를 하나도 다시 읽지 않았으므로 항상 0이다. 021B가 이 필드를 "직전 분석 시점의 누적
+   실패 수"로 읽으면 안 된다.
+2. `AnalyzeRunOptions.force?: boolean` — `true`면 `hasKeywords`조차 호출하지 않고 재분석한다.
+   021B의 `?force=true`가 그대로 이 옵션에 대응한다.
+3. `lib/keyword/index.ts`에 재수출하지 않는다. `aggregate.ts`(020B)도 배럴에 없는 채로 이미 쓰이고
+   있어 같은 관례를 따랐다. **배럴로 공개 API를 강제하는 규칙(D-002·D-022)은 `lib/keyword/kiwi.ts`의
+   원시 `Kiwi` 인스턴스 은닉에 걸린 것이지 이 디렉터리 전체의 import 방식을 강제하지 않는다.**
+
+**없음 / 0건을 가르는 방식**: 존재하지 않는 run은 `getRun`이 던지는 `RunNotFoundError`(D-022)를 그대로
+흘려보내고, 기사 0건인 run은 예외가 아니라 `items: []`인 정상 반환값이다. **"없음"은 예외 타입으로,
+"0건"은 정상 반환값으로 갈라** 021B가 각각 404 / "빈 결과 + 안내"로 매핑하기만 하면 된다 — 문자열
+판정을 쓰지 않는다(I-016·D-022·I-020이 전부 그 패턴 때문에 생긴 이슈다).
+
+### D-034 · `RunProgress`에 `successCount`·`failCount`·`skippedCount`를 필수 필드로 추가한다
+
+- 상태: 유효
+- 결정: 11일차 · 크롤 파이프라인(Task 016B 구현 중)
+- 영향 Task: Task 014A/014B · Task 015B · **Task 016B(반영)**
+- 영향 파일: `lib/types/crawl-run.ts` · `lib/crawler/run-manager.ts`
+
+**배경**: 설계서 01 §④완료·§⑤부분 실패·§⑧중단됨이 요구하는 "기사 N건 저장"·"M건 미수집"·"성공 X ·
+실패 Y" 요약을 그릴 데이터가 **폴링 응답(`RunProgress`)에 없었다.** 그 집계는 `CrawlRun`(`run-meta.json`)에만
+있는데, 설계서 §③이 "이 화면은 `GET /api/crawl/{runId}`가 돌려주는 `RunProgress`만 그린다"고 못박아
+두었다. `GET /api/runs/{runId}`(Task 017, 저장소 계층 소유)를 새로 호출하는 것은 **이 화면의 설계 원칙과
+016B의 파일 경계 양쪽을 벗어난다.**
+
+**결정**: `runProgressSchema`에 세 필드를 **필수로** 추가한다. 진행 중에는 0으로 두고,
+`runInBackground`가 `finishRun`과 같은 지점에서 채운다. `recoverRunProgress`(복구 경로)는 이미 갖고 있는
+`finalRun`의 같은 필드를 **그대로 옮긴다 — 근사치를 새로 계산하지 않는다.**
+
+**하위호환 검토 — 왜 optional이 아닌가**: `RunProgress`는 파일로 영속화되지 않는다. 교차검증에서
+`runProgressSchema`의 `.parse()`/`.safeParse()` 호출부가 프로젝트 전체에 **하나도 없고**(타입 추론에만
+쓰인다), `run-repository.ts`는 `crawlRunSchema`로만 파일을 읽고 쓴다는 것을 확인했다. 그래서 D-029 2항이
+경고한 "과거 파일이 파싱에서 떨어져 그 run이 목록에서 사라지는" 함정이 **애초에 성립하지 않는다.**
+`hooks/use-crawl-progress.ts`(015B)도 필드를 나열하지 않고 타입을 통째로 참조해 깨지지 않는다.
+
+**실측 확인**: 완료 시나리오에서 "2개 언론사 · 기사 40건 저장"이 `successCount`와, 중단 시나리오에서
+"2/4개 언론사 완료 · 기사 71건 저장 · 23건 미수집"이 `run-meta.json`의 `successCount: 71` ·
+`skippedCount: 23`과 정확히 일치함을 확인했다.

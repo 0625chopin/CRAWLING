@@ -5,6 +5,8 @@ import {
   formatDurationLabel,
   formatLocalDateTimeMinute,
   formatLocalDateTimeSecond,
+  formatLocalTime,
+  formatLocalTimeOnly,
 } from './run-format'
 
 describe('formatLocalDateTimeMinute', () => {
@@ -54,6 +56,39 @@ describe('formatDurationLabel', () => {
   it('0초 소요도 "0분 0초"로 정상 표시한다', () => {
     const iso = new Date(2026, 7, 10, 14, 32, 5).toISOString()
     expect(formatDurationLabel(iso, iso)).toBe('0분 0초')
+  })
+})
+
+describe('formatLocalTimeOnly', () => {
+  it('ISO 문자열에서 시:분만 뽑는다(날짜·초는 생략한다)', () => {
+    const iso = new Date(2026, 7, 10, 14, 32, 5).toISOString()
+    expect(formatLocalTimeOnly(iso)).toBe('14:32')
+  })
+
+  it('한 자리 시·분을 0으로 채운다', () => {
+    const iso = new Date(2026, 0, 5, 9, 3, 47).toISOString()
+    expect(formatLocalTimeOnly(iso)).toBe('09:03')
+  })
+})
+
+describe('formatLocalTime', () => {
+  it('ISO 문자열에서 시:분:초를 뽑는다(날짜는 생략한다)', () => {
+    const iso = new Date(2026, 7, 10, 14, 33, 10).toISOString()
+    expect(formatLocalTime(iso)).toBe('14:33:10')
+  })
+
+  it('한 자리 시·분·초를 0으로 채운다', () => {
+    const iso = new Date(2026, 0, 5, 9, 3, 7).toISOString()
+    expect(formatLocalTime(iso)).toBe('09:03:07')
+  })
+
+  // I-025 회귀: 두 함수 모두 Date에서 시:분(:초)을 직접 조립하므로, 같은 입력에서
+  // formatLocalDateTimeSecond의 출력이 formatLocalTime의 출력으로 끝나야 한다. 예전처럼
+  // formatLocalDateTimeSecond의 출력 문자열을 slice(11, 16) 등으로 잘라 만들었다면, 그 함수의
+  // 출력 폭이 바뀌는 순간 이 교차 확인이 깨져 결합이 다시 생겼음을 알려준다.
+  it('formatLocalDateTimeSecond의 출력이 이 함수의 결과로 끝난다(문자열 슬라이스 결합 재발 방지)', () => {
+    const iso = new Date(2026, 7, 10, 14, 33, 10).toISOString()
+    expect(formatLocalDateTimeSecond(iso).endsWith(formatLocalTime(iso))).toBe(true)
   })
 })
 

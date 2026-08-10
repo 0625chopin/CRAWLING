@@ -789,3 +789,111 @@ runId를 `run-repository.getRun`(fs 읽기, 비동기)으로 복구해야 한다
 **실측 확인**: 완료 시나리오에서 "2개 언론사 · 기사 40건 저장"이 `successCount`와, 중단 시나리오에서
 "2/4개 언론사 완료 · 기사 71건 저장 · 23건 미수집"이 `run-meta.json`의 `successCount: 71` ·
 `skippedCount: 23`과 정확히 일치함을 확인했다.
+
+### D-035 · `GET /api/runs/[runId]/keywords`의 `pos` 쿼리는 쉼표로 구분한 복수 값을 받는다
+
+- 상태: 유효
+- 결정: 12일차 · 저장소 계층(Task 021B) · 교차검증(크롤 파이프라인) 확인
+- 영향 Task: Task 021B(반영) · **Task 022A(조건 바가 이 형식으로 호출한다)**
+
+**배경**: ROADMAP Task 021 구현 규칙은 `?pos` 형식을 담당 판단으로 열어 뒀다. 설계서 03 §① 조건 바가
+품사 필터를 `ToggleGroup type="multiple"`로 명시하므로 **단일 값만 받는 API로는 이 UI를 표현할 수 없다.**
+
+**결정**: `?pos=NNG,NNP`처럼 쉼표로 구분한 문자열 하나로 받는다. 서버가 `split(',') → trim → 빈 문자열
+제거 → 중복 제거` 후 `PosTag` enum 멤버십을 검사하고, 하나라도 유효하지 않으면 **`pos` 키 하나에 한국어
+메시지를 담아 400**으로 거부한다(`pos.0`·`pos.1`처럼 배열 경로별로 쪼개지 않는다). 값을 생략하면 전체 품사다.
+
+**대안을 버린 이유**: 반복 키(`?pos=NNG&pos=NNP`)는 이 프로젝트의 다른 쿼리 파라미터(`?active=true`·`?q=`)가
+전부 단일 문자열이고 `getAll`을 쓰는 선례가 없어 관례에서 벗어난다. 쉼표 구분은 022A의 URL 조립이
+`pos: selected.join(',')` 한 줄로 끝난다.
+
+**실측**: `?pos=NNG, NNP , NNG`(공백·중복 섞임)가 `["NNG","NNP"]`로 정규화되고 `?pos=XX`는 400으로
+거부됨을 담당과 리뷰가 각각 확인했다.
+
+### D-036 · `force`는 zod로 검증하지 않고 `=== 'true'` 문자열 비교로 처리한다
+
+- 상태: 유효
+- 결정: 12일차 · 저장소 계층(Task 021B) · 교차검증(크롤 파이프라인)이 타당으로 판정
+- 영향 Task: Task 021B(반영)
+
+**배경**: `docs/CONVENTIONS.md` §6은 쿼리 파라미터를 zod로 검증하라고 하지만, `force`는 이미
+`app/api/press/route.ts`의 `?active=true`가 쓰는 것과 같은 성격의 불리언 플래그다.
+
+**결정**: `minCount`(숫자)·`pos`(enum 배열)처럼 **"잘못된 값"이 의미 있는 필드만 zod로 검증**하고,
+`force`는 기존 `active`와 동일하게 문자열 비교로 처리한다(`'true'`가 아니면 전부 false, 400을 내지 않는다).
+값 공간이 사실상 2개뿐이라 무효값을 알려 줄 실익이 없고, 처리 방식을 섞으면 다음 파라미터를 추가할 때
+"언제 zod를 쓰는지"가 코드마다 갈린다.
+
+**감수하는 것**: `?force=1`·`?force=TRUE`가 **에러 없이 조용히 캐시를 반환한다**(실측: 200, `analyzedAt`
+변화 없음, 10.6ms). 교차검증은 이것을 "리스크 없음"이 아니라 **"리스크가 작고 감수할 만함"**으로
+기록해 두라고 판정했다 — 실제 호출자는 022A의 `[재분석]` 버튼 하나이고 항상 리터럴 `"true"`를 보내며,
+이 앱은 URL을 조작해 들어올 외부 소비자가 없는 로컬 단일 사용자 도구다.
+
+### D-037 · 키워드 조회 응답은 `rank`·`ratio`를 채우지 않고, `ratio` 분모는 1위 `count`다
+
+- 상태: 유효
+- 결정: 12일차 · 저장소 계층(Task 021B) 제안 · **교차검증(크롤 파이프라인)이 열린 판단을 설계서로 닫음**
+- 영향 Task: Task 021B(반영) · **Task 022B(랭킹 표·카드가 직접 계산한다)**
+
+**결정 1 — 021B는 `rank`·`ratio`를 계산하지 않는다.** `items`는 `KeywordCount[]`(저장 포맷과 같은 형태,
+이미 빈도 내림차순 정렬)로 내려주고, 022B가 `index + 1`로 rank를 만든다. **021B가 미리 계산하면 022B가
+"필터된 집합 안에서의 순위"와 "전체 집합 안에서의 순위" 중 무엇을 받았는지 응답만 보고 알 수 없다.**
+
+**결정 2 — `ratio` 분모는 `items[0].count`(1위 count)다.** 담당은 이것을 "022B가 착수 전에 정할 남은
+판단"으로 남겼으나, **교차검증이 설계서에 이미 답이 있음을 찾아냈다**:
+`docs/screens/03-hot-keyword.md:441`이 `ratio: number // 0~1, 최상위 키워드 대비 비중`이라고 명시하고,
+같은 문서의 mock 숫자가 이를 증명한다 — `96/128 = 0.75`(2위) · `84/128 ≈ 0.66`(3위) · `77/128 ≈ 0.6`(4위) ·
+`65/128 ≈ 0.51`(5위), 1위는 `ratio: 1`. **"전체 대비"도 "`filteredTokenCount` 대비"도 아니다.**
+022B는 `item.count / items[0].count`만 계산하면 된다. **열린 판단이 아니라 이미 닫힌 사양이다.**
+
+### D-038 · `GET /api/runs/[runId]/keywords` 응답 형태
+
+- 상태: 유효
+- 결정: 12일차 · 저장소 계층(Task 021B)
+- 영향 Task: Task 021B(반영) · Task 022A·022B(이 형태를 그대로 소비)
+
+**결정**: `{ runId, analyzedAt, summary, items, totalItemCount, skippedArticleCount, message? }`.
+
+- **`summary`는 항상 `keywords.json` 전체 집계 기준이고 필터로 흔들리지 않는다**(ROADMAP DoD). 실측으로
+  6가지 필터 조합에서 전부 동일함을 담당이, 4가지 조합에서 리뷰가 각각 확인했다.
+- `items`는 필터(`minCount`·`pos`·`topN`) 적용 후 배열. `totalItemCount`는 필터 전 전체 키워드 수
+  (`summary.uniqueKeywordCount`와 항상 같다) — 화면이 "2412개 중 672개만 보임" 같은 문구를 만들 수 있게
+  별도 필드로 뒀다.
+- `skippedArticleCount`는 D-033을 그대로 통과시킨다(캐시 히트면 항상 0).
+- **`message`는 기사 0건 run에서만 채운다.** 필터가 모든 항목을 걸러 `items`가 빈 배열이 되는 경우와
+  원인이 다르므로 **필드 존재 여부로** 두 상태를 가른다(문자열 비교가 아니다). 화면 문구는
+  "이 실행에는 수집된 기사가 없어 분석할 키워드가 없습니다."
+- 회귀는 `keywords-response.test.ts`가 고정한다 — `summary`를 참조 동일성(`toBe`)까지 확인한다.
+
+**기사 0건 라이브 검증**: 담당은 데이터가 없어 vitest로만 고정했으나, **교차검증이 기존 run을 건드리지 않고
+임시 디렉터리를 만들었다 지우는 방식으로 직접 태워 확인했다** — 200 + `summary` 전부 0 + `items: []` +
+`message` 존재, 같은 run에 필터를 함께 걸어도 안전. 이 필드가 022A의 빈 상태 UI를 좌우하므로
+**실측 없이 넘길 항목이 아니었다.**
+
+### D-039 · I-018(`runCrawl` 죽은 코드)에서 제거할 범위와 남길 범위
+
+- 상태: 제안(Task 023 착수 회차에 최종 확정)
+- 결정: 12일차 · 크롤 파이프라인(023 담당이 유휴 배정으로 미리 정리)
+- 영향 Task: **Task 023**
+- 관련 이슈: **I-018** · 관련 결정: **D-001**
+
+**배경**: I-018은 "지우면 `lib/crawler/types.ts`의 범용 스키마까지 연쇄로 걸린다"며 판단을 023으로 미뤘다.
+12일차에 **실제 import 그래프를 다시 추적했고, 죽은 범위는 생각보다 좁다.**
+
+**추적 결과**
+- `runCrawl`(`lib/crawler/run.ts`)은 `CrawlTarget`·`CrawlResult` **타입만** 쓴다.
+  `crawlRequestSchema`/`CrawlRequest`(배치 입력 봉투)는 **`run.ts`조차 참조하지 않고** `index.ts`가
+  재수출할 뿐이다 — 코드 쪽 실제 소비자 0건.
+- 반면 `crawlTargetSchema`·`CrawlTarget`·`ResolvedCrawlTarget`·`CrawlResult`·`CrawlSuccess`·`CrawlFailure`는
+  **여전히 살아 있다** — `lib/crawler/fetch-html.ts`의 `fetchHtml()`이 대상 1건을 검증하는 데 쓰고,
+  `fetchHtml`은 `press-crawler.ts`가 HTML 방식 언론사를 크롤할 때 호출한다(013B가 확정한 경로).
+  **D-001이 이 스키마를 남겨 둔 근거는 `app/api/crawl/route.ts`가 없어진 지금도 `fetchHtml` 내부 검증에서
+  그대로 유효하다.**
+
+**제안**: ① `lib/crawler/run.ts` 전체 삭제 ② `types.ts`에서 **`crawlRequestSchema`·`CrawlRequest`만** 제거
+(나머지 유지) ③ `index.ts`에서 그 항목들의 재수출 줄만 제거 ④ `press-crawler.ts`의 `runCrawl` 언급 주석 정리.
+
+**ROADMAP 반영 필요**: Task 023 「생성/수정 파일」에 현재 `app/api/kiwi-check/route.ts`·
+`components/common/screen-placeholder.tsx` 2건만 있다. 위가 맞다면 `lib/crawler/{run.ts, types.ts,
+index.ts, press-crawler.ts}` 4건을 추가해야 범위가 맞다. **최종 판단과 반영은 023 착수 회차에 한다 —
+이 결정은 판단 재료를 미리 굳혀 둔 것이다.**

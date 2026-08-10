@@ -29,6 +29,14 @@ export interface PressCrawlHooks {
    * 이 모듈은 저장소·HTTP를 모른다 — 진행 상황을 밖으로 알리는 유일한 통로다.
    */
   onArticleDone?: (pressId: string, collected: number, target: number) => void
+  /**
+   * 원문 페이지를 요청하기 직전에 확인하는 훅. true를 반환하면 그 기사는 `fetchHtml`을 호출하지
+   * 않고 즉시 실패로 접는다 — 이미 이 훅이 false였을 때 시작된 요청(진행 중인 Playwright 페이지)은
+   * 강제로 죽이지 않고 끝까지 기다린다("다음 기사부터 요청하지 않는다"). run-manager의 abortRun
+   * 플래그를 이 지점에서 읽는다(Task 014B, docs/DECISIONS.md D-016 "크롤 루프가 그 값을 읽어
+   * 실제로 멈추는 것은 014B로 넘긴다").
+   */
+  isAborted?: () => boolean
 }
 
 export interface PressCrawlOptions {
@@ -129,6 +137,17 @@ async function collectArticlePages(
           await sleep(delayMs)
         }
         try {
+          if (hooks.isAborted?.()) {
+            return {
+              ok: false as const,
+              failure: {
+                ok: false as const,
+                url: link.url,
+                error: '실행이 중단되어 이 기사는 요청하지 않았습니다',
+                elapsedMs: 0,
+              },
+            }
+          }
           return await collectArticlePage(pressId, runId, link, contentSelector, titleSelector)
         } catch (error) {
           return {
@@ -244,6 +263,9 @@ async function crawlRssPress(
   const offsetHooks: PressCrawlHooks = {
     onArticleDone: (pressId, collected) =>
       hooks.onArticleDone?.(pressId, missingLinkFailures.length + collected, target),
+    // isAborted를 빠뜨리면 이 경로(RSS 본문 전문)만 중단 신호를 못 받는다 — onArticleDone만
+    // 옮겨 적다 생긴 실수라 명시적으로 짚어 둔다.
+    isAborted: hooks.isAborted,
   }
   const { articles, failures } = await collectArticlePages(
     press.id,

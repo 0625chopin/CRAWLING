@@ -70,5 +70,14 @@ export const runProgressSchema = z.object({
   currentCollected: z.number().int().nonnegative(),
   currentTarget: z.number().int().nonnegative(),
   pressStatuses: z.array(pressRunStatusSchema),
+  /**
+   * true면 이 스냅샷이 메모리 잡 레지스트리가 아니라 서버 재시작 뒤 `run-meta.json`·기사 파일
+   * 개수로부터 근사 복원한 값이다(`lib/crawler/run-manager.ts`의 `recoverRunProgress`, Task 014B).
+   * 이 경우 `pressStatuses[].target`은 실제 목표치가 아니라 `collected`와 같은 값으로 채워진다 —
+   * 원래 20건 목표였다가 5건에서 중단된 언론사가 이 필드 없이는 "5/5건 · 완료"로 보여 실제보다
+   * 확정적으로 읽힌다(8일차 교차검증 후속). 정상(레지스트리 적중) 경로에서는 이 필드를 아예
+   * 붙이지 않는다 — 기존 소비처(015B 등)를 깨지 않는 선택적 필드다.
+   */
+  recovered: z.boolean().optional(),
 })
 export type RunProgress = z.infer<typeof runProgressSchema>

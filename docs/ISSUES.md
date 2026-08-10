@@ -243,3 +243,71 @@ DoD로 남긴다. 어느 쪽이든 팀장 승인이 필요해 이슈로 남긴�
 
 **제안**: 스켈레톤을 `h-[320px] pr-3 sm:h-[420px]`로 고쳐 결정 문서·명세 표와 일치시킨다. 설계서 자체를
 지금 고칠지 016A 착수 시점에 고칠지는 팀장 판단이 필요해 이슈로 남긴다.
+
+### I-014 · `CrawlRun`이 대상 언론사 이름을 스냅샷하지 않아 삭제된 언론사의 이름을 복구할 수 없다
+
+- 상태: 열림
+- 발견: 8일차 · 저장소 계층(유휴 배정 — Task 017 응답 스키마 초안 작성 중)
+- 관련 Task: Task 017(10일차 착수) · Task 018A
+
+**증상**: `lib/types/crawl-run.ts`의 `CrawlRun`은 `targetPressIds: string[]`만 갖는다. 삭제는
+`lib/storage/press-repository.ts:145` 부근의 `deletePress`가 배열에서 항목을 **완전히 제거**하는
+방식이라(소프트 삭제·tombstone 없음), 과거 run이 가리키던 `pressId`로 `getPress(id)`를 불러도 `null`이
+돌아오고 **그 언론사의 원래 이름을 복구할 방법이 코드 어디에도 없다.** 크롤 파이프라인이 교차검증에서
+`deletePress` 구현을 직접 열어 이 진단이 정확함을 확인했다.
+
+**영향**: `docs/ROADMAP.md` Task 017 구현 규칙 "대상 언론사는 id가 아니라 이름으로, 삭제된 언론사는
+플래그를 함께"에서 삭제된 쪽은 이름이 영구히 `null`이다. 화면 설계서 02는 대상 언론사를 이름 배지로
+그리는데, 그 자리에 무엇을 채울지 설계서에 명시가 없다. **DoD("삭제된 언론사가 포함된 과거 run을
+조회해도 500이 나지 않는다")는 충족 가능하다** — 문제는 500 여부가 아니라 화면 표시다.
+
+**제안(택1)**: ① API는 `name: null, deleted: true`를 내리고 화면이 "삭제된 언론사" 고정 문구로 대체
+렌더링한다(구현 비용 최저, `docs/run-api-schema.draft.md` 초안이 이 방향). ② `run-meta.json`에 실행
+시점 이름 스냅샷을 추가한다(정확하지만 Task 007·013B가 이미 완료라 스키마 마이그레이션이 필요하고,
+기존 저장분은 여전히 스냅샷이 없어 반쪽 해결이다).
+
+**이 이슈는 Task 017을 막지 않는다.** 다만 화면(Task 018A)이 배지를 어떻게 그릴지 미리 알아야 두
+워크스트림이 같은 가정으로 움직인다.
+
+### I-015 · 저장 경로를 화면 형식(프로젝트 루트 상대경로)으로 내려줄 수단이 없다
+
+- 상태: 열림
+- 발견: 8일차 · 저장소 계층(유휴 배정 — Task 017 응답 스키마 초안 작성 중)
+- 관련 Task: Task 017(10일차 착수)
+
+**증상**: `lib/storage/paths.ts`의 `DATA_ROOT`는 `path.join(process.cwd(), 'data')` — OS 절대경로다.
+`articlesDir()`도 그 위에 조립되는 절대경로만 반환하고, 상대 표시 문자열을 만드는 헬퍼가 없다. 반면
+화면 설계서 02는 저장 경로를 `data/runs/20260810-143205/articles/`처럼 **프로젝트 루트 기준 상대경로**로
+보여준다(와이어프레임·스켈레톤 `MOCK_RUNS[].storagePath` 모두 상대 표기).
+
+**왜 조용히 새는가**: Task 017 구현자가 `articlesDir(runId)`를 그대로 응답에 실으면 화면에 로컬
+절대경로가 노출된다. 로컬 단일 사용자 도구라 보안 문제는 아니지만 설계서와 다른 형식이 나가는
+표시 버그이고, **타입체크·빌드·테스트가 전부 통과한다.** 게다가 라우트 안에서 즉석으로
+`path.relative(...)`를 쓰면 그 자체가 `docs/CONVENTIONS.md` §2("경로 문자열은 `lib/storage/paths.ts`에만
+존재한다") 위반이 된다 — 크롤 파이프라인이 교차검증에서 이 두 번째 근거를 추가로 짚었다.
+
+**제안**: `paths.ts`에 `articlesDisplayPath(runId)` 같은 헬퍼를 두고 `path.relative(process.cwd(), ...)`를
+슬래시로 정규화해 돌려준다. Task 017 구현 시점에 함께 만든다.
+
+### I-016 · run 생명주기 예외를 문자열 메시지로만 구분할 수 있었다
+
+- 상태: 해결됨
+- 발견: 8일차 · 화면(Task 015B 구현 중)
+- 관련 Task: Task 014B · Task 015B · Task 015A(9일차)
+
+**증상**: `RunAlreadyRunningError`(409 신호)는 전용 클래스였지만 "레지스트리에도 디스크에도 없는
+runId"는 `lib/storage/run-repository.ts`의 `readRunMeta`가 던지는 평범한 `Error`였다. 그래서
+`app/api/crawl/[runId]/route.ts`의 GET이 404를 판정하려면 메시지 접두사
+(`실행을 찾을 수 없습니다`)를 비교해야 했다.
+
+**왜 위험한가**: 문구를 누가 다듬는 순간 **404가 조용히 500이 되고 lint·typecheck·build·test가 전부
+통과한다.** 게다가 9일차의 Task 015A가 `abortRun`의 두 예외("실행을 찾을 수 없습니다" /
+"이미 종료된 실행은 중단할 수 없습니다")를 **또 문자열로** 갈라야 하는 상황이라, 같은 취약점이
+라우트마다 복제될 참이었다.
+
+**해소(8일차, 팀장 판단)**: 크롤 파이프라인이 `lib/storage/run-repository.ts`에 `RunNotFoundError`를,
+`lib/crawler/run-manager.ts`에 `RunNotAbortableError`를 선언하고 `lib/crawler` 배럴이 셋
+(`RunAlreadyRunningError` 포함)을 재수출한다. 화면이 GET 라우트를 `error instanceof RunNotFoundError`
+판정으로 교체했다. **한국어 메시지 문구는 한 글자도 바꾸지 않았다** — 사용자에게 보이는 문장은
+그대로다. 상세 판단은 D-022. 저장소 계층이 호출 체인 전체를 추적해 중간에 예외를 다시 감싸는 지점이
+없음을 확인했다(타입이 라우트까지 보존된다).

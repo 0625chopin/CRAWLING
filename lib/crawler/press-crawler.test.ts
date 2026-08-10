@@ -207,6 +207,25 @@ describe('crawlPress — RSS 본문 전문(contentSelector 있음)', () => {
     expect(result.failures[0].error).toBe('타임아웃')
   })
 
+  // Task 014B(run-manager.ts)가 abortRun 플래그를 이 훅으로 전달한다 — collectArticlePages가
+  // 다음 링크를 처리하기 직전에 읽어 "다음 기사부터 요청하지 않는다"를 구현하는 지점이라
+  // 이 모듈에서도 회귀로 고정해 둔다.
+  it('isAborted가 true면 원문 페이지를 하나도 요청하지 않고 중단 사유로 남긴다(014B 훅)', async () => {
+    fetchFeedMock.mockResolvedValue({
+      ok: true,
+      url: rssPressFullText.feedUrl,
+      elapsedMs: 1,
+      items: [feedItem({ link: 'https://example.com/a/1', title: '기사1' })],
+    })
+
+    const result = await crawlPress(rssPressFullText, RUN_ID, {}, { isAborted: () => true })
+
+    expect(fetchHtmlMock).not.toHaveBeenCalled()
+    expect(result.articles).toHaveLength(0)
+    expect(result.failures).toHaveLength(1)
+    expect(result.failures[0].error).toBe('실행이 중단되어 이 기사는 요청하지 않았습니다')
+  })
+
   it('링크가 없는 피드 항목은 조용히 버리지 않고 명시적 실패로 기록한다(6일차 리뷰 지적)', async () => {
     fetchFeedMock.mockResolvedValue({
       ok: true,

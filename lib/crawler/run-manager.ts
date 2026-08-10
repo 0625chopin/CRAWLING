@@ -2,9 +2,9 @@ import 'server-only'
 
 import pLimit from 'p-limit'
 
-import { saveArticle } from '@/lib/storage/article-repository'
+import { listArticles, saveArticle } from '@/lib/storage/article-repository'
 import { getPress } from '@/lib/storage/press-repository'
-import { createRun, finishRun } from '@/lib/storage/run-repository'
+import { createRun, finishRun, getRun, updateRunMeta } from '@/lib/storage/run-repository'
 import type { Article } from '@/lib/types/article'
 import {
   crawlStartRequestSchema,
@@ -26,13 +26,40 @@ import { crawlPress, type PressCrawlResult } from './press-crawler'
 interface RunJob {
   runId: string
   /**
-   * 014B가 소비할 중단 플래그. 이번 회차(014A)는 `abortRun`이 이 값을 세우는 것까지만 한다 —
-   * 크롤 루프가 이 값을 읽어 실제로 중단하는 것과 `run-meta.json`에 `status: 'aborted'`를 쓰는
-   * 것은 다음 회차 몫이다(docs/ROADMAP/work/02.크롤파이프라인.md Task 014B). 여기서 값을 세워도
-   * 아직 아무 동작에도 연결돼 있지 않다 — 레지스트리 구조만 이 값을 담을 수 있게 해 둔다.
+   * 중단 플래그. `abortRun`이 세우고, `runInBackground`(다음 언론사를 시작할지)와
+   * `runOnePress`가 `crawlPress`에 넘기는 `isAborted` 훅(다음 기사를 요청할지, press-crawler.ts의
+   * `collectArticlePages`가 읽는다)이 함께 읽는다 — 진행 중인 Playwright 페이지는 강제로 죽이지
+   * 않고, "아직 시작하지 않은 다음 단위"만 건너뛰는 방식이다(D-016 이월분).
    */
   aborted: boolean
   progress: RunProgress
+}
+
+/**
+ * 이미 `running` 상태인 run이 있을 때 새 실행 시도를 거절하는 신호. HTTP를 모르는 이 계층은
+ * 상태 코드를 직접 정하지 않지만, 이름과 타입으로 라우트(Task 015A)가 다른 예외와 구분해 409로
+ * 매핑할 수 있게 한다. `lib/api/response.ts`의 `withErrorBoundary`는 모든 예외를 500 문구로
+ * 뭉개므로(D-008), 015A는 이 에러를 그 경계 안에서 별도로 `instanceof` 분기하거나 그 바깥에서
+ * 먼저 걸러내야 한다 — 015A가 구현할 때 참고.
+ */
+export class RunAlreadyRunningError extends Error {
+  constructor(public readonly runningRunId: string) {
+    super(`이미 실행 중인 작업이 있습니다: ${runningRunId}`)
+    this.name = 'RunAlreadyRunningError'
+  }
+}
+
+/**
+ * 이미 종료된(running이 아닌) run을 다시 중단하려 할 때 던진다. `RunAlreadyRunningError`와 같은
+ * 이유로 문자열 대신 타입으로 올렸다 — `abortRun`이 이 문구를 두 곳(레지스트리 경로·디스크 복구
+ * 경로)에서 던지므로, 문구만으로 판정하던 소비자가 한쪽만 고치는 사고를 막는다(8일차 교차검증
+ * 후속). 한국어 메시지는 화면이 그대로 보여주므로 바꾸지 않았다.
+ */
+export class RunNotAbortableError extends Error {
+  constructor(public readonly runId: string) {
+    super(`이미 종료된 실행은 중단할 수 없습니다: ${runId}`)
+    this.name = 'RunNotAbortableError'
+  }
 }
 
 /**
@@ -89,7 +116,8 @@ async function runOnePress(
   maxArticlesPerPress: number | undefined,
   status: PressRunStatus,
   progress: RunProgress,
-  nextArticleId: () => string
+  nextArticleId: () => string,
+  job: RunJob
 ): Promise<{ successCount: number; failCount: number }> {
   status.status = 'running'
 
@@ -106,6 +134,9 @@ async function runOnePress(
         progress.currentTarget = target
         recomputeOverallPercent(progress)
       },
+      // press-crawler.ts의 collectArticlePages가 다음 기사를 요청하기 직전에 이 값을 읽는다 —
+      // 이미 시작된 요청은 끝까지 기다리고, 아직 시작하지 않은 요청만 건너뛴다.
+      isAborted: () => job.aborted,
     }
   )
 
@@ -124,11 +155,19 @@ async function runOnePress(
   // 드문 경우라 여기서는 같은 문구로 뭉갠다 — 상태가 'failed'로 보이는 것 자체는 두 경우
   // 모두 맞고, 어긋날 수 있는 것은 failReason 라벨뿐이다.
   const isTotalFailure = result.articles.length === 0 && result.failures.length > 0
-  status.status = isTotalFailure ? 'failed' : 'done'
-  if (isTotalFailure) {
-    const rawReason = result.failures[0]?.error ?? ''
-    status.failReason = normalizeFailReason(press, rawReason)
-    status.rawFailReason = rawReason
+  if (job.aborted && result.articles.length === 0) {
+    // 이 언론사는 시작은 했지만 중단 시점이 일러 한 건도 건지지 못했다 — 셀렉터 불일치·타임아웃
+    // 등 실제 실패로 오인되지 않도록 'failed'로 굳히지 않고 'waiting'으로 되돌린다. run 전체
+    // 상태는 어차피 아래(runInBackground)에서 'aborted'로 표시된다.
+    status.status = 'waiting'
+    status.collected = 0
+  } else {
+    status.status = isTotalFailure ? 'failed' : 'done'
+    if (isTotalFailure) {
+      const rawReason = result.failures[0]?.error ?? ''
+      status.failReason = normalizeFailReason(press, rawReason)
+      status.rawFailReason = rawReason
+    }
   }
   recomputeOverallPercent(progress)
 
@@ -144,7 +183,8 @@ async function runInBackground(
   pressSources: (PressSource | null)[],
   pressStatuses: PressRunStatus[],
   progress: RunProgress,
-  maxArticlesPerPress: number | undefined
+  maxArticlesPerPress: number | undefined,
+  job: RunJob
 ): Promise<void> {
   let nextSeq = 1
   const nextArticleId = () => String(nextSeq++).padStart(4, '0')
@@ -157,7 +197,11 @@ async function runInBackground(
         // getPress가 null을 준 언론사(요청 시점엔 있었지만 사라진 id)는 startRun이 이미
         // pressStatuses를 'failed'로 채워 두었다 — 여기서는 집계만 반영하고 크롤을 시도하지 않는다.
         if (!press) return { successCount: 0, failCount: 1 }
-        return runOnePress(press, runId, maxArticlesPerPress, pressStatuses[index], progress, nextArticleId)
+        // 이 언론사의 차례가 됐을 때(pressConcurrency 대기열에서 빠져나왔을 때) 이미 중단
+        // 상태라면 아예 시작하지 않는다 — 'waiting'으로 남아 "시도하지 않았다"를 그대로 보여준다.
+        // 이미 실행 중이던 다른 언론사의 Playwright 페이지는 여기서 건드리지 않는다.
+        if (job.aborted) return { successCount: 0, failCount: 0 }
+        return runOnePress(press, runId, maxArticlesPerPress, pressStatuses[index], progress, nextArticleId, job)
       })
     )
   )
@@ -166,7 +210,11 @@ async function runInBackground(
   const failCount = counts.reduce((sum, count) => sum + count.failCount, 0)
 
   const finished = await finishRun(runId, { successCount, failCount })
-  progress.status = finished.status
+  // finishRun은 실패 건수로만 done/failed/partial-failed를 산출한다(D-007 ③) — 'aborted'는
+  // 그 계산 밖이라 여기서 덮어쓴다. successCount/failCount/finishedAt은 finishRun이 이미 기록한
+  // 값을 그대로 둔다(중단 시점까지 실제로 수집·저장한 결과이므로 보존한다).
+  const finalRun = job.aborted ? await updateRunMeta(runId, { status: 'aborted' }) : finished
+  progress.status = finalRun.status
   progress.currentPressName = null
 }
 
@@ -178,6 +226,14 @@ async function runInBackground(
  */
 export async function startRun(input: CrawlStartRequest): Promise<{ runId: string }> {
   const { pressIds, maxArticlesPerPress } = crawlStartRequestSchema.parse(input)
+
+  // 동시에 여러 run을 시작하는 것은 막는다(로컬 1인 도구 + Playwright 브라우저 자원 공유).
+  // 레지스트리에 남은 잡 중 아직 'running'인 것이 있으면 거절한다 — 서버 재시작으로 죽은
+  // 프로세스의 고아 run은 이 레지스트리에 애초에 없으므로(비어서 시작) 여기 걸리지 않는다.
+  const runningJob = [...runRegistry.values()].find((job) => job.progress.status === 'running')
+  if (runningJob) {
+    throw new RunAlreadyRunningError(runningJob.runId)
+  }
 
   const pressSources = await Promise.all(pressIds.map((id) => getPress(id)))
   const run = await createRun(pressIds)
@@ -209,38 +265,107 @@ export async function startRun(input: CrawlStartRequest): Promise<{ runId: strin
     pressStatuses,
   }
 
-  runRegistry.set(run.id, { runId: run.id, aborted: false, progress })
+  const job: RunJob = { runId: run.id, aborted: false, progress }
+  runRegistry.set(run.id, job)
 
   // 반환은 여기서 끝난다. 아래는 await하지 않고 백그라운드로 흘려보낸다 — startRun 호출자는
   // 크롤 완료를 기다리지 않는다(Task 014 DoD "1초 이내에 runId 반환").
-  void runInBackground(run.id, pressSources, pressStatuses, progress, maxArticlesPerPress)
+  void runInBackground(run.id, pressSources, pressStatuses, progress, maxArticlesPerPress, job)
 
   return { runId: run.id }
 }
 
 /**
- * 진행 상태는 메모리(레지스트리)에서 읽는다 — `run-meta.json`은 최종 결과 확인용이다(Task 014
- * 구현 규칙 "진행 상태는 메모리, 최종 결과는 파일"). 서버 재시작으로 레지스트리가 비었을 때
- * `run-meta.json`을 보고 복구하는 것은 014B 몫이라 여기서는 찾지 못하면 예외로 알린다.
+ * 레지스트리에 없는 runId를 `run-meta.json`으로 복구한다 — 서버 재시작으로 메모리 잡이 사라진
+ * 뒤 조회되는 경우다(이번 프로세스가 이 run을 잡으로 들고 있어 본 적이 없다는 뜻이므로, 파일이
+ * 아직 'running'이면 그 자체가 고아라는 증거다). `getRun`이 없는 runId는 예외로 던지므로 여기서
+ * 따로 존재 확인을 하지 않는다.
+ *
+ * 언론사별 상세(진행률·실패 사유)는 메모리에만 있던 값이라 재구성할 수 없다 — `listArticles`로
+ * 실제 저장된 기사 수만 언론사별로 세어 `collected`/`target`을 채우고, 하나라도 건졌으면 'done',
+ * 아니면 'waiting'으로 본다(근거 없이 'failed'·failReason을 지어내지 않는다).
  */
-export function getRunProgress(runId: string): RunProgress {
-  const job = runRegistry.get(runId)
-  if (!job) {
-    throw new Error(`실행을 찾을 수 없습니다: ${runId}`)
+async function recoverRunProgress(runId: string): Promise<RunProgress> {
+  const run = await getRun(runId)
+
+  const finalRun =
+    run.status === 'running'
+      ? await updateRunMeta(runId, { status: 'aborted', finishedAt: run.finishedAt ?? new Date().toISOString() })
+      : run
+
+  const articles = await listArticles(runId)
+  const collectedByPress = new Map<string, number>()
+  for (const article of articles) {
+    collectedByPress.set(article.pressId, (collectedByPress.get(article.pressId) ?? 0) + 1)
   }
-  return job.progress
+
+  const pressStatuses: PressRunStatus[] = await Promise.all(
+    finalRun.targetPressIds.map(async (pressId) => {
+      const press = await getPress(pressId)
+      const collected = collectedByPress.get(pressId) ?? 0
+      return {
+        pressId,
+        name: press?.name ?? pressId,
+        status: collected > 0 ? 'done' : 'waiting',
+        collected,
+        target: collected,
+      }
+    })
+  )
+
+  return {
+    runId: finalRun.id,
+    status: finalRun.status,
+    overallPercent: 100,
+    currentPressName: null,
+    currentCollected: 0,
+    currentTarget: 0,
+    pressStatuses,
+    // 레지스트리가 아니라 디스크에서 재구성한 스냅샷임을 알린다 — pressStatuses[].target이
+    // 실제 목표치가 아니라 collected와 같은 근사값이라는 뜻이다(위 함수 doc 참고, 8일차
+    // 교차검증 후속). 화면은 이 플래그로 "확정 완료"가 아니라 "복구된 값"임을 구분해 그릴 수 있다.
+    recovered: true,
+  }
 }
 
 /**
- * 중단 플래그만 세운다. 이 값을 크롤 루프가 읽어 다음 기사부터 요청하지 않게 하는 것, 진행 중인
- * run을 `run-meta.json`에 `status: 'aborted'`로 기록하는 것, 이미 `running`인 run이 있을 때
- * 409로 새 실행을 거절하는 것은 모두 014B 몫이다(docs/ROADMAP/work/02.크롤파이프라인.md
- * Task 014B). 지금은 레지스트리가 이 값을 담을 수 있다는 것만 보장한다.
+ * 진행 상태는 우선 메모리(레지스트리)에서 읽는다 — `run-meta.json`은 최종 결과 확인용이다
+ * (Task 014 구현 규칙 "진행 상태는 메모리, 최종 결과는 파일"). 레지스트리에 없으면(서버 재시작
+ * 등으로 이 프로세스가 이 run을 잡으로 들고 있어 본 적이 없으면) `run-meta.json`으로 복구한다 —
+ * 여기서 `status: 'running'`인 채로 남은 run을 조회 시점에 `aborted`로 못박는다(Task 014B DoD).
+ * 파일도 없는 진짜 없는 runId만 예외로 알린다.
  */
-export function abortRun(runId: string): void {
+export async function getRunProgress(runId: string): Promise<RunProgress> {
   const job = runRegistry.get(runId)
-  if (!job) {
-    throw new Error(`실행을 찾을 수 없습니다: ${runId}`)
+  if (job) return job.progress
+  return recoverRunProgress(runId)
+}
+
+/**
+ * 중단을 요청한다. 이 프로세스가 이 run을 잡으로 들고 있으면(레지스트리에 있으면) 플래그만
+ * 세운다 — 그 값을 `runInBackground`(다음 언론사)와 `press-crawler.ts`의 `collectArticlePages`
+ * (다음 기사)가 읽어 실제로 멈춘다. 진행 중인 Playwright 페이지는 강제로 죽이지 않는다.
+ *
+ * 레지스트리에 없으면(서버 재시작으로 고아가 된 run) 멈출 살아있는 루프가 이 프로세스에 없다 —
+ * `run-meta.json`이 아직 'running'이면 직접 'aborted'로 마무리하고, 이미 끝난 run이면 예외로
+ * 알린다(끝난 실행은 중단할 대상이 아니다).
+ */
+export async function abortRun(runId: string): Promise<void> {
+  const job = runRegistry.get(runId)
+  if (job) {
+    // 이미 끝난 run(레지스트리에는 남아 있지만 progress.status가 종료 상태)은 아래 디스크
+    // 경로와 같은 규칙으로 거절한다 — 레지스트리에 있느냐 없느냐로 "중단 가능 여부" 판정이
+    // 갈리면 015A가 같은 상황을 두 가지로 다르게 처리해야 한다.
+    if (job.progress.status !== 'running') {
+      throw new RunNotAbortableError(runId)
+    }
+    job.aborted = true
+    return
   }
-  job.aborted = true
+
+  const run = await getRun(runId) // 존재하지 않는 runId는 여기서 RunNotFoundError로 알려진다
+  if (run.status !== 'running') {
+    throw new RunNotAbortableError(runId)
+  }
+  await updateRunMeta(runId, { status: 'aborted', finishedAt: new Date().toISOString() })
 }

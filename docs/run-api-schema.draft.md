@@ -44,6 +44,9 @@ interface RunListItem {
   targetPressCount: number // = targetPressIds.length. label 파싱 없이 뱃지 개수 등에 재사용
   successCount: number
   failCount: number
+  /** 중단으로 요청조차 하지 않은 기사 수(I-017). 실패가 아니므로 `failCount`와 합치지 않는다.
+   *  이 필드가 생기기 전 run은 0으로 내려간다(스키마 기본값). */
+  skippedCount: number
 }
 
 type RunListResponse = RunListItem[] // ok(RunListResponse)
@@ -77,6 +80,10 @@ interface RunSummary {
   targetPress: TargetPressRef[]
   successCount: number
   failCount: number
+  /** 중단으로 요청조차 하지 않은 기사 수(I-017). `status === 'aborted'`에서만 0이 아니다.
+   *  화면에 노출할지·문구를 어떻게 쓸지는 미결이다(화면 draft 이슈 "중단으로 끝난 실행에 대응하는
+   *  완료 화면이 설계서 01에 없다"). **확실한 것 하나: "실패"라는 말로 묶으면 안 된다.** */
+  skippedCount: number
   /** `lib/storage/paths.ts`의 `articlesDisplayPath(runId)` 반환값을 그대로 쓴다(I-015 해소).
    *  DATA_ROOT 절대경로가 아니라 `data/runs/{runId}/articles/` 형태의 슬래시 구분 상대경로다. */
   storagePath: string
@@ -164,6 +171,11 @@ interface ArticleDetail {
 | ⑤ 수집시각 메타 | `2026-08-10 14:33:10 수집` | `ArticleDetail.crawledAt` |
 | ⑤ 본문 | `whitespace-pre-wrap` 본문 | `ArticleDetail.content` |
 | ⑤ 일부 실패 `ErrorAlert` | `6건의 기사 수집에 실패했습니다` | `RunSummary.failCount > 0` (클라이언트 조건부 렌더, 별도 필드 불필요) |
+
+> ⚠️ `skippedCount`는 위 표에 대응하는 화면 요소가 **없다.** 설계서 02가 중단으로 끝난 실행을 그리는
+> 자리를 두지 않았기 때문이다(설계서 01도 마찬가지 — 화면 draft 이슈로 등재). 017은 값을 내려주기만
+> 하고, 그리는 판단은 018A·016B로 넘긴다. **`failCount`에 합쳐서 내려주는 것만은 하지 않는다** —
+> 그게 정확히 I-017이었다.
 
 **빠짐없이 덮는다.** 화면 설계서 02가 그리는 모든 데이터 바인딩 지점(마크업의 `TODO: ... 바인딩 필요`
 주석 포함)이 위 표의 오른쪽 열에 대응한다.

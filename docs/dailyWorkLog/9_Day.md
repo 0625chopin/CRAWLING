@@ -132,8 +132,49 @@
   `02.크롤파이프라인.md` 19~20주차 항목(016B 상태 7종을 설계서 01과 대조)이 배정 대상이다
 - **I-017은 016B 착수 전에 닫아야 한다** — 담당은 크롤 파이프라인이다
 
+## 마감 후 추가 작업 — I-017 해소 (팀장)
+
+회차 마감 커밋 뒤, **10일차로 넘어가기 전에** I-017을 닫았다. 위 「발견·해결한 이슈」 4번에서 "016B
+착수 전에 닫아야 한다"고 적은 그 항목이다. 미루면 016A(10일차)가 끝나는 순간 016B가 곧바로 거짓 숫자를
+그리게 된다.
+
+- **택한 방향**: I-017 제안 ①(별도 `skippedCount`). 단, 제안 문구의 "`CrawlFailure`로 기록하되
+  집계에서 제외"가 아니라 **애초에 다른 통로로 보낸다** — 링크 1건의 결과를 판별 유니온
+  `PageOutcome`(`article` | `failure` | `skipped`)으로 갈랐다. ②안은 `error` 문자열을 다시 문자열로
+  판정하는 방식이라 버렸다(I-016이 같은 이유로 문자열 판정을 걷어낸 전례가 있다).
+- **집계만 고쳐서는 절반만 닫힌다**: 건너뛴 링크가 `onArticleDone`을 부르면 진행률이 100%까지
+  차올라 화면은 여전히 "다 됐다"고 말한다. 훅 호출도 함께 막았다 — `target`은 목표치(30)를 유지하고
+  `collected`만 실제 처리 건수에서 멈춘다.
+- 산출물: `lib/crawler/press-crawler.ts` · `lib/crawler/run-manager.ts` · `lib/types/crawl-run.ts` ·
+  `lib/storage/run-repository.ts` · `lib/types/crawl-run.test.ts`(신규) ·
+  `docs/ISSUES.md`(I-017 해결됨) · `docs/DECISIONS.draft.크롤파이프라인.md`(신규) ·
+  `docs/ISSUES.draft.화면.md`(신규) · `docs/run-api-schema.draft.md`
+- 테스트: **150건**(9일차 145건에서 +5 — press-crawler 2 · run-manager 1 · crawl-run 스키마 3, 기존
+  중단 테스트 1건은 성격이 바뀌어 재작성). lint · typecheck · build 모두 통과.
+
+### 실측 재검증 (dev 3001, 같은 동선으로 다시)
+
+이슈가 실측으로만 드러났으므로 수정도 실측으로 닫았다. 언론사 4곳 × 30건 크롤 → 진행 중 중단.
+
+| | 수정 전(9일차 검증) | 수정 후 |
+| --- | --- | --- |
+| `run-meta.json` | `successCount 51 · failCount 43` | `successCount 53 · failCount 0 · skippedCount 41` |
+| 저장된 기사 txt | 51건 | **53건 = successCount** |
+| 진행 상태 | 4곳 전부 `done` · `collected == target` | `30/30 · 10/10 · 8/30 · 5/24`(합 53) |
+| `overallPercent` | 100 | **56** |
+
+두 소스가 같은 말을 한다. `skippedCount 41`도 `(30-8) + (24-5)`로 정확히 맞는다.
+
+### 남긴 것 — 화면 draft 이슈 1건
+
+숫자는 맞췄지만 **중단으로 끝난 실행을 그리는 화면 상태가 설계서 01에 없다.** ④완료를 그대로 쓰면
+"✓ 크롤링 완료"가 되어 중단 사실이 사라지고, 중간에 멈춘 언론사는 `status: 'done'`인 채 `8/30` 옆에
+완료 아이콘이 붙는다(`pressRunStatus` enum에 "하다 말았다"를 담을 값이 없다). 여기서부터는
+`docs/CONVENTIONS.md` §8("설계서에 없는 UI를 지어내지 않는다") 영역이라 코드로 먼저 정하지 않고
+`docs/ISSUES.draft.화면.md`에 올렸다 — **016B 착수 전에 설계서부터 정해야 한다.**
+
 ## git
 
 - 브랜치: day-9 (day-8에서 분기)
-- 커밋: 회차 마감 커밋 1건
+- 커밋: 회차 마감 커밋 1건 + I-017 해소 커밋 1건
 - 푸시: 세 회차를 마친 뒤 사용자 확인 후 결정

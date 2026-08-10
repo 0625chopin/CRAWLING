@@ -100,6 +100,7 @@ export async function createRun(targetPressIds: string[]): Promise<CrawlRun> {
     finishedAt: null,
     successCount: 0,
     failCount: 0,
+    skippedCount: 0,
     status: 'running',
   })
 
@@ -155,10 +156,13 @@ export async function updateRunMeta(
  * 실행을 마무리한다. status는 실패 건수로부터 결정한다 — 실패 0건은 `done`, 성공이 하나도
  * 없으면 `failed`, 나머지(성공·실패 혼재)는 `partial-failed`다(docs/PRD.md §CrawlRun).
  * `aborted`는 이 함수가 아니라 사용자 중단 경로(Task 014B)가 updateRunMeta로 직접 설정한다.
+ *
+ * `skippedCount`(중단으로 요청조차 하지 않은 건수, I-017)는 **status 계산에 넣지 않는다** —
+ * 건너뛴 건이 있다는 이유로 실행이 `partial-failed`가 되면 안 된다. 기록만 한다.
  */
 export async function finishRun(
   runId: string,
-  counts: { successCount: number; failCount: number }
+  counts: { successCount: number; failCount: number; skippedCount?: number }
 ): Promise<CrawlRun> {
   const status: CrawlRunStatus =
     counts.failCount === 0 ? 'done' : counts.successCount === 0 ? 'failed' : 'partial-failed'
@@ -166,6 +170,7 @@ export async function finishRun(
   return updateRunMeta(runId, {
     successCount: counts.successCount,
     failCount: counts.failCount,
+    skippedCount: counts.skippedCount ?? 0,
     finishedAt: new Date().toISOString(),
     status,
   })

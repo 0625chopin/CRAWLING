@@ -335,7 +335,7 @@ runId"는 `lib/storage/run-repository.ts`의 `readRunMeta`가 던지는 평범�
 
 ### I-017 · 중단하면 요청하지 않은 기사가 「실패」로 집계되어 화면이 거짓 숫자를 말한다
 
-- 상태: 열림
+- 상태: **해결됨(9일차 마감 후 · 팀장)**
 - 발견: 9일차 · 팀장(Task 015A 실크롤 검증 중 — 실측으로만 드러났다)
 - 관련 Task: Task 014B · Task 015A · **Task 016B(화면에 그대로 나간다)** · Task 018A
 
@@ -363,6 +363,28 @@ runId"는 `lib/storage/run-repository.ts`의 `readRunMeta`가 던지는 평범�
 별도 `skippedCount`로 센다. ② `finishRun`이 `status: 'aborted'`일 때 중단 사유 실패를 걸러 센다.
 ③ 화면이 `status === 'aborted'`면 실패 건수를 다르게 표현한다(가장 싸지만 `run-meta.json` 자체는
 계속 거짓을 담는다). **①·②는 크롤 파이프라인(014B·013B) 몫이고 016B 착수 전에 닫아야 한다.**
+
+**해소(9일차 마감 후, 팀장)**: ①을 택하되 **문구가 아니라 타입으로 갈랐다.** ②(finishRun이
+`status: 'aborted'`일 때 중단 사유 실패를 걸러 센다)는 `error` 문자열을 다시 문자열로 판정하는
+방식이라 채택하지 않았다 — I-016이 이미 같은 이유로 문자열 판정을 타입 판정으로 걷어낸 전례다.
+
+- `lib/crawler/press-crawler.ts`: 링크 1건의 결과를 `PageOutcome`(`article` | `failure` | `skipped`)
+  판별 유니온으로 나누고, `PressCrawlResult`에 `skipped: string[]`을 새로 뒀다. 중단으로 접힌 링크는
+  **`failures`에 들어가지 않고 `onArticleDone`도 부르지 않는다** — 후자를 빠뜨리면 진행률이 100%까지
+  차올라 "다 됐다"고 말하던 절반의 거짓이 그대로 남는다.
+- `lib/crawler/run-manager.ts`: 집계를 `RunCounts`(`successCount`·`failCount`·`skippedCount`)로 넓혔다.
+  **아예 시작하지 않은 언론사의 `skippedCount`는 0이다** — 목록·피드조차 열지 않아 몇 건인지 알 수
+  없고, 요청 시 최대 건수로 추정해 채우면 파일에 지어낸 숫자가 남는다.
+- `lib/types/crawl-run.ts` · `lib/storage/run-repository.ts`: `CrawlRun.skippedCount`를 **기본값 0인
+  선택 필드**로 추가했다(필수로 두면 과거 `run-meta.json`이 `safeParse`에서 떨어져 `listRuns`가 그 run을
+  목록에서 통째로 빠뜨린다 — D-026이 확인한 경로 그대로다). `finishRun`의 status 계산에는 넣지 않는다.
+- 회귀: `press-crawler.test.ts` 2건(전부 건너뜀 / 처리 도중 중단) · `run-manager.test.ts` 1건(집계 분리) ·
+  `lib/types/crawl-run.test.ts` 신규 3건(하위호환·거부 케이스). 145 → 150건.
+
+**실측 재확인(dev 3001, 언론사 4곳 × 30건 크롤 후 중단)**: `successCount: 53, failCount: 0,
+skippedCount: 41`이고 저장된 기사 txt도 **53건**이다. 진행 상태 응답도 같은 말을 한다 —
+`bloter 30/30 · boannews 10/10 · inews24 8/30 · zdnet-korea 5/24`(합 53), `overallPercent: 56`.
+**고치기 전에는 같은 동선이 `failCount: 43` + 전 언론사 `collected == target` + 진행률 100%였다.**
 
 ### I-018 · `runCrawl`(범용 배치 크롤)이 호출부 없는 죽은 코드가 됐다
 

@@ -95,16 +95,27 @@ function makeRun(overrides: Partial<CrawlRun> = {}): CrawlRun {
     finishedAt: null,
     successCount: 0,
     failCount: 0,
+    skippedCount: 0,
     status: 'running',
     ...overrides,
   }
 }
 
 /** 실행 로직 자체를 정확히 흉내 낸다 — run-manager가 finishRun 반환값을 그대로 신뢰하기 때문이다. */
-function finishRunLikeReal(runId: string, counts: { successCount: number; failCount: number }): CrawlRun {
+function finishRunLikeReal(
+  runId: string,
+  counts: { successCount: number; failCount: number; skippedCount?: number }
+): CrawlRun {
+  // skippedCount는 status 계산에 넣지 않는다(I-017) — 실제 finishRun과 같은 규칙이다.
   const status =
     counts.failCount === 0 ? 'done' : counts.successCount === 0 ? 'failed' : 'partial-failed'
-  return makeRun({ id: runId, successCount: counts.successCount, failCount: counts.failCount, status })
+  return makeRun({
+    id: runId,
+    successCount: counts.successCount,
+    failCount: counts.failCount,
+    skippedCount: counts.skippedCount ?? 0,
+    status,
+  })
 }
 
 /** updateRunMeta 실제 동작(현재값 + patch 병합)을 흉내 낸다 — 마무리 단계 검증에 필요하다. */
@@ -135,8 +146,9 @@ beforeEach(() => {
   crawlPressMock.mockReset()
   configMock.pressConcurrency = 5
   createRunMock.mockImplementation(async (pressIds: string[]) => makeRun({ targetPressIds: pressIds }))
-  finishRunMock.mockImplementation(async (runId: string, counts: { successCount: number; failCount: number }) =>
-    finishRunLikeReal(runId, counts)
+  finishRunMock.mockImplementation(
+    async (runId: string, counts: { successCount: number; failCount: number; skippedCount?: number }) =>
+      finishRunLikeReal(runId, counts)
   )
 })
 
@@ -148,7 +160,7 @@ describe('startRun', () => {
     let releaseCrawl: (() => void) | undefined
     crawlPressMock.mockReturnValue(
       new Promise<PressCrawlResult>((resolve) => {
-        releaseCrawl = () => resolve({ pressId: pressA.id, articles: [], failures: [] })
+        releaseCrawl = () => resolve({ pressId: pressA.id, articles: [], failures: [], skipped: [] })
       })
     )
 
@@ -172,7 +184,7 @@ describe('startRun', () => {
     let releaseCrawl: (() => void) | undefined
     crawlPressMock.mockReturnValue(
       new Promise<PressCrawlResult>((resolve) => {
-        releaseCrawl = () => resolve({ pressId: press.id, articles: [], failures: [] })
+        releaseCrawl = () => resolve({ pressId: press.id, articles: [], failures: [], skipped: [] })
       })
     )
 
@@ -207,7 +219,7 @@ describe('startRun', () => {
         const articles = [draft(press.id, 1), draft(press.id, 2)]
         hooks.onArticleDone?.(press.id, 1, 2)
         hooks.onArticleDone?.(press.id, 2, 2)
-        return { pressId: press.id, articles, failures: [] } satisfies PressCrawlResult
+        return { pressId: press.id, articles, failures: [], skipped: [] } satisfies PressCrawlResult
       }
     )
 
@@ -254,7 +266,7 @@ describe('startRun', () => {
     expect(progress.recovered).toBeUndefined()
 
     // 다음 테스트가 같은 RUN_ID로 startRun을 다시 호출할 수 있도록 배경 잡을 마저 끝내 둔다.
-    resolveCrawl?.({ pressId: press.id, articles: [], failures: [] })
+    resolveCrawl?.({ pressId: press.id, articles: [], failures: [], skipped: [] })
     await vi.waitFor(async () => {
       expect((await getRunProgress(RUN_ID)).status).not.toBe('running')
     })
@@ -274,7 +286,11 @@ describe('startRun', () => {
       pressId: 'ghost-press',
       status: 'failed',
     })
-    expect(finishRunMock).toHaveBeenCalledWith(RUN_ID, { successCount: 0, failCount: 1 })
+    expect(finishRunMock).toHaveBeenCalledWith(RUN_ID, {
+      successCount: 0,
+      failCount: 1,
+      skippedCount: 0,
+    })
   })
 
   it('이미 running인 잡이 있으면 새 실행을 RunAlreadyRunningError로 거절한다(409로 내려갈 신호)', async () => {
@@ -284,7 +300,7 @@ describe('startRun', () => {
     let releaseCrawl: (() => void) | undefined
     crawlPressMock.mockReturnValue(
       new Promise<PressCrawlResult>((resolve) => {
-        releaseCrawl = () => resolve({ pressId: press.id, articles: [], failures: [] })
+        releaseCrawl = () => resolve({ pressId: press.id, articles: [], failures: [], skipped: [] })
       })
     )
 
@@ -316,7 +332,7 @@ describe('abortRun — 진행 중인 잡', () => {
         await new Promise<void>((resolve) => {
           releaseA = resolve
         })
-        return { pressId: press.id, articles: [draft(press.id, 1)], failures: [] } satisfies PressCrawlResult
+        return { pressId: press.id, articles: [draft(press.id, 1)], failures: [], skipped: [] } satisfies PressCrawlResult
       }
       // press B는 중단 이후 시작되면 안 된다 — 호출 자체를 실패로 만든다.
       throw new Error('press B는 호출되면 안 된다(abortRun 이후)')
@@ -352,10 +368,36 @@ describe('abortRun — 진행 중인 잡', () => {
     expect(updateRunMetaMock).toHaveBeenCalledWith(RUN_ID, { status: 'aborted' })
   })
 
+  // I-017 회귀. 9일차 실크롤에서 중단 결과가 `successCount: 51, failCount: 43`으로 남았는데 43은
+  // 요청조차 하지 않은 링크였다 — 화면(016B)이 그대로 그리면 중단 버튼을 눌렀을 뿐인데
+  // "실패 43건" destructive Alert가 뜬다. 이 경계를 코드로 못박아 둔다.
+  it('중단으로 건너뛴 기사는 failCount가 아니라 skippedCount로 집계한다(I-017)', async () => {
+    const press = makeRssPress('press-a', '언론사 A')
+    getPressMock.mockResolvedValue(press)
+    crawlPressMock.mockResolvedValue({
+      pressId: press.id,
+      articles: [draft(press.id, 1), draft(press.id, 2)],
+      failures: [{ ok: false, url: 'https://example.com/press-a/9', error: '타임아웃', elapsedMs: 0 }],
+      skipped: ['https://example.com/press-a/3', 'https://example.com/press-a/4'],
+    } satisfies PressCrawlResult)
+
+    await startRun({ pressIds: [press.id] })
+    await vi.waitFor(async () => {
+      expect((await getRunProgress(RUN_ID)).status).not.toBe('running')
+    })
+
+    // 실제로 시도했다가 실패한 1건만 failCount다. 건너뛴 2건은 별도 칸으로 간다.
+    expect(finishRunMock).toHaveBeenCalledWith(RUN_ID, {
+      successCount: 2,
+      failCount: 1,
+      skippedCount: 2,
+    })
+  })
+
   it('이미 종료된 잡을 다시 중단하면 예외를 던진다', async () => {
     const press = makeRssPress('press-a', '언론사 A')
     getPressMock.mockResolvedValue(press)
-    crawlPressMock.mockResolvedValue({ pressId: press.id, articles: [], failures: [] } satisfies PressCrawlResult)
+    crawlPressMock.mockResolvedValue({ pressId: press.id, articles: [], failures: [], skipped: [] } satisfies PressCrawlResult)
 
     await startRun({ pressIds: [press.id] })
     await vi.waitFor(async () => {
@@ -476,6 +518,7 @@ describe('failReason 정형화(normalizeFailReason)', () => {
       pressId: press.id,
       articles: [],
       failures: [{ ok: false, url: press.listUrl, error: rawError, elapsedMs: 0 }],
+      skipped: [],
     } satisfies PressCrawlResult)
 
     await startRun({ pressIds: [press.id] })
@@ -502,6 +545,7 @@ describe('failReason 정형화(normalizeFailReason)', () => {
       pressId: press.id,
       articles: [],
       failures: [{ ok: false, url: press.feedUrl, error: rawError, elapsedMs: 0 }],
+      skipped: [],
     } satisfies PressCrawlResult)
 
     await startRun({ pressIds: [press.id] })

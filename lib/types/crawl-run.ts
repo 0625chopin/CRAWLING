@@ -22,7 +22,18 @@ export const crawlRunSchema = z.object({
   // 실행 중(status: 'running')에는 아직 끝나지 않았으므로 null. Date 객체 대신 ISO 8601 문자열로 고정한다.
   finishedAt: z.iso.datetime({ offset: true }).nullable(),
   successCount: z.number().int().nonnegative(),
+  /** **수집을 시도했다가 실패한** 기사 수. 중단으로 요청조차 하지 않은 건은 여기 들어가지 않는다. */
   failCount: z.number().int().nonnegative(),
+  /**
+   * 중단 요청으로 요청조차 하지 않은 기사 수(I-017). `failCount`와 나눠 세지 않으면 중단 버튼을
+   * 누른 실행이 "실패 43건"으로 남아 화면이 destructive Alert를 띄운다.
+   *
+   * **선택 필드 + 기본값 0인 이유**: 이 필드가 생기기 전에 만들어진 `run-meta.json`은 이 키가 없다.
+   * 필수로 두면 과거 파일이 `crawlRunSchema.safeParse`에서 떨어지고 → `readRunMeta`가 손상으로
+   * 던지고 → `listRuns`가 그 예외를 삼켜 **해당 run이 목록에서 통째로 사라진다**(D-026에서 실제
+   * 코드 경로로 확인한 함정이다).
+   */
+  skippedCount: z.number().int().nonnegative().default(0),
   status: crawlRunStatusSchema,
 })
 export type CrawlRun = z.infer<typeof crawlRunSchema>

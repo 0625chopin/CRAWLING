@@ -31,10 +31,13 @@ export interface PressCrawlHooks {
   onArticleDone?: (pressId: string, collected: number, target: number) => void
   /**
    * 원문 페이지를 요청하기 직전에 확인하는 훅. true를 반환하면 그 기사는 `fetchHtml`을 호출하지
-   * 않고 즉시 실패로 접는다 — 이미 이 훅이 false였을 때 시작된 요청(진행 중인 Playwright 페이지)은
+   * 않고 `skipped`에 담는다 — 이미 이 훅이 false였을 때 시작된 요청(진행 중인 Playwright 페이지)은
    * 강제로 죽이지 않고 끝까지 기다린다("다음 기사부터 요청하지 않는다"). run-manager의 abortRun
    * 플래그를 이 지점에서 읽는다(Task 014B, docs/DECISIONS.md D-016 "크롤 루프가 그 값을 읽어
    * 실제로 멈추는 것은 014B로 넘긴다").
+   *
+   * ⚠️ 건너뛴 링크는 `failures`에 넣지 않고 `onArticleDone`도 부르지 않는다 — 요청조차 하지 않은
+   * 것을 실패·수집 완료로 세면 화면과 `run-meta.json`이 서로 다른 말을 한다(I-017).
    */
   isAborted?: () => boolean
 }
@@ -53,9 +56,25 @@ export interface PressCrawlResult {
    * 언론사 전체 실패도 이 배열에 담긴 1건으로 표현한다(articles는 빈 배열이 된다).
    */
   failures: CrawlFailure[]
+  /**
+   * 중단 요청 때문에 **요청 자체를 하지 않은** 링크의 URL. 실패가 아니므로 `failures`와 섞지
+   * 않는다 — 9일차에 실크롤을 중단했더니 요청조차 하지 않은 43건이 `failCount`로 집계돼
+   * `run-meta.json`이 "실패 43건", 진행 상태는 "전부 완료"라고 말하는 모순이 났다(I-017).
+   * 문구로 구분하지 않고 배열을 나눈 것은, 문구만 바꿔도 집계가 조용히 틀어지기 때문이다.
+   */
+  skipped: string[]
 }
 
 type ArticleLink = { url: string; title?: string }
+
+/**
+ * 링크 1건의 처리 결과. **"실패"와 "요청하지 않음"을 타입으로 가른다** — 두 가지를 같은
+ * `CrawlFailure` 배열에 담고 문구(`실행이 중단되어…`)로 구분하던 방식이 I-017의 직접 원인이었다.
+ */
+type PageOutcome =
+  | { kind: 'article'; article: ArticleDraft }
+  | { kind: 'failure'; failure: CrawlFailure }
+  | { kind: 'skipped'; url: string }
 
 /**
  * 원문 페이지 하나를 열어 제목·본문을 뽑고 최소 길이를 검사한다.
@@ -124,7 +143,7 @@ async function collectArticlePages(
   contentSelector: string,
   titleSelector: string | undefined,
   hooks: PressCrawlHooks
-): Promise<{ articles: ArticleDraft[]; failures: CrawlFailure[] }> {
+): Promise<{ articles: ArticleDraft[]; failures: CrawlFailure[]; skipped: string[] }> {
   const limit = pLimit(crawlerConfig.concurrency)
   const delayMs = crawlerConfig.delayMs
   const target = links.length
@@ -132,28 +151,25 @@ async function collectArticlePages(
 
   const results = await Promise.all(
     links.map((link, index) =>
-      limit(async () => {
+      limit(async (): Promise<PageOutcome> => {
         if (delayMs > 0 && index > 0) {
           await sleep(delayMs)
         }
+        // 중단은 "처리한 기사"가 아니다 — collected를 올리지 않고, onArticleDone도 부르지 않는다.
+        // 여기서 세면 진행률이 100%까지 차오르며 "다 됐다"고 말하게 된다(I-017).
+        if (hooks.isAborted?.()) {
+          return { kind: 'skipped', url: link.url }
+        }
         try {
-          if (hooks.isAborted?.()) {
-            return {
-              ok: false as const,
-              failure: {
-                ok: false as const,
-                url: link.url,
-                error: '실행이 중단되어 이 기사는 요청하지 않았습니다',
-                elapsedMs: 0,
-              },
-            }
-          }
-          return await collectArticlePage(pressId, runId, link, contentSelector, titleSelector)
+          const result = await collectArticlePage(pressId, runId, link, contentSelector, titleSelector)
+          return result.ok
+            ? { kind: 'article', article: result.article }
+            : { kind: 'failure', failure: result.failure }
         } catch (error) {
           return {
-            ok: false as const,
+            kind: 'failure',
             failure: {
-              ok: false as const,
+              ok: false,
               url: link.url,
               error: error instanceof Error ? error.message : String(error),
               elapsedMs: 0,
@@ -169,11 +185,13 @@ async function collectArticlePages(
 
   const articles: ArticleDraft[] = []
   const failures: CrawlFailure[] = []
+  const skipped: string[] = []
   for (const result of results) {
-    if (result.ok) articles.push(result.article)
-    else failures.push(result.failure)
+    if (result.kind === 'article') articles.push(result.article)
+    else if (result.kind === 'failure') failures.push(result.failure)
+    else skipped.push(result.url)
   }
-  return { articles, failures }
+  return { articles, failures, skipped }
 }
 
 /**
@@ -217,7 +235,8 @@ function collectRssSummaries(
     hooks.onArticleDone?.(pressId, index + 1, target)
   })
 
-  return { pressId, articles, failures }
+  // RSS 요약 경로는 원문 페이지를 한 번도 요청하지 않으므로 "요청하지 않고 건너뛴 링크" 자체가 없다.
+  return { pressId, articles, failures, skipped: [] }
 }
 
 async function crawlRssPress(
@@ -229,7 +248,7 @@ async function crawlRssPress(
   const feedResult = await fetchFeed(press.feedUrl)
   if (!feedResult.ok) {
     // 피드 자체를 못 읽는 것은 개별 기사 격리 대상이 아니라 이 호출 전체의 실패다(D-003).
-    return { pressId: press.id, articles: [], failures: [feedResult] }
+    return { pressId: press.id, articles: [], failures: [feedResult], skipped: [] }
   }
 
   // 링크를 이 개수로 자른 뒤에 기사 크롤(또는 요약 검사)에 들어간다 — 자르기 전에 다 처리하지 않는다.
@@ -267,7 +286,7 @@ async function crawlRssPress(
     // 옮겨 적다 생긴 실수라 명시적으로 짚어 둔다.
     isAborted: hooks.isAborted,
   }
-  const { articles, failures } = await collectArticlePages(
+  const { articles, failures, skipped } = await collectArticlePages(
     press.id,
     runId,
     links,
@@ -275,7 +294,7 @@ async function crawlRssPress(
     undefined,
     offsetHooks
   )
-  return { pressId: press.id, articles, failures: [...missingLinkFailures, ...failures] }
+  return { pressId: press.id, articles, failures: [...missingLinkFailures, ...failures], skipped }
 }
 
 async function crawlHtmlPress(
@@ -286,7 +305,7 @@ async function crawlHtmlPress(
 ): Promise<PressCrawlResult> {
   const listPage = await fetchHtml({ url: press.listUrl })
   if (!listPage.ok) {
-    return { pressId: press.id, articles: [], failures: [listPage] }
+    return { pressId: press.id, articles: [], failures: [listPage], skipped: [] }
   }
 
   const $ = loadDocument(listPage.html)
@@ -304,11 +323,12 @@ async function crawlHtmlPress(
           elapsedMs: listPage.elapsedMs,
         },
       ],
+      skipped: [],
     }
   }
 
   const links = allLinks.slice(0, maxCount).map((url) => ({ url }))
-  const { articles, failures } = await collectArticlePages(
+  const { articles, failures, skipped } = await collectArticlePages(
     press.id,
     runId,
     links,
@@ -316,7 +336,7 @@ async function crawlHtmlPress(
     press.titleSelector,
     hooks
   )
-  return { pressId: press.id, articles, failures }
+  return { pressId: press.id, articles, failures, skipped }
 }
 
 /**

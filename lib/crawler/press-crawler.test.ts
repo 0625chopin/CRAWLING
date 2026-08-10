@@ -25,20 +25,24 @@ vi.mock('./rss', async (importOriginal) => {
   return { ...actual, fetchFeed: (...args: unknown[]) => fetchFeedMock(...args) }
 })
 
-vi.mock('./config', () => ({
-  crawlerConfig: {
-    concurrency: 5,
-    delayMs: 0,
-    timeoutMs: 5000,
-    channel: undefined,
-    headless: true,
-    userAgent: 'vitest',
-  },
+// vi.mock 팩토리는 파일 상단으로 끌어올려지므로 외부 변수를 참조하려면 vi.hoisted로 감싼다
+// (run-manager.test.ts와 같은 패턴). 중단 시점을 확정해야 하는 테스트가 concurrency를 1로 좁히므로
+// 객체를 통째로 바꾸지 않고 mutate하고, 기본값은 beforeEach에서 되돌린다.
+const configMock = vi.hoisted(() => ({
+  concurrency: 5,
+  delayMs: 0,
+  timeoutMs: 5000,
+  channel: undefined,
+  headless: true,
+  userAgent: 'vitest',
 }))
+vi.mock('./config', () => ({ crawlerConfig: configMock }))
 
 beforeEach(() => {
   fetchHtmlMock.mockReset()
   fetchFeedMock.mockReset()
+  configMock.concurrency = 5
+  configMock.delayMs = 0
 })
 
 afterEach(() => {
@@ -210,7 +214,7 @@ describe('crawlPress — RSS 본문 전문(contentSelector 있음)', () => {
   // Task 014B(run-manager.ts)가 abortRun 플래그를 이 훅으로 전달한다 — collectArticlePages가
   // 다음 링크를 처리하기 직전에 읽어 "다음 기사부터 요청하지 않는다"를 구현하는 지점이라
   // 이 모듈에서도 회귀로 고정해 둔다.
-  it('isAborted가 true면 원문 페이지를 하나도 요청하지 않고 중단 사유로 남긴다(014B 훅)', async () => {
+  it('isAborted가 true면 원문 페이지를 하나도 요청하지 않고 skipped로만 남긴다(014B 훅 · I-017)', async () => {
     fetchFeedMock.mockResolvedValue({
       ok: true,
       url: rssPressFullText.feedUrl,
@@ -218,12 +222,57 @@ describe('crawlPress — RSS 본문 전문(contentSelector 있음)', () => {
       items: [feedItem({ link: 'https://example.com/a/1', title: '기사1' })],
     })
 
-    const result = await crawlPress(rssPressFullText, RUN_ID, {}, { isAborted: () => true })
+    const onArticleDone = vi.fn()
+    const result = await crawlPress(
+      rssPressFullText,
+      RUN_ID,
+      {},
+      { isAborted: () => true, onArticleDone }
+    )
 
     expect(fetchHtmlMock).not.toHaveBeenCalled()
     expect(result.articles).toHaveLength(0)
-    expect(result.failures).toHaveLength(1)
-    expect(result.failures[0].error).toBe('실행이 중단되어 이 기사는 요청하지 않았습니다')
+    // 요청조차 하지 않은 링크가 failures로 새면 run-meta.json에 "실패 N건"이 남는다(I-017).
+    expect(result.failures).toHaveLength(0)
+    expect(result.skipped).toEqual(['https://example.com/a/1'])
+    // 건너뛴 링크는 "처리 완료"도 아니다 — 진행률이 100%까지 차오르면 화면이 "다 됐다"고 말한다.
+    expect(onArticleDone).not.toHaveBeenCalled()
+  })
+
+  it('중단 이전에 처리된 기사는 그대로 집계하고 이후 링크만 skipped로 가른다(I-017)', async () => {
+    fetchFeedMock.mockResolvedValue({
+      ok: true,
+      url: rssPressFullText.feedUrl,
+      elapsedMs: 1,
+      items: [
+        feedItem({ link: 'https://example.com/a/1', title: '기사1' }),
+        feedItem({ link: 'https://example.com/a/2', title: '기사2' }),
+        feedItem({ link: 'https://example.com/a/3', title: '기사3' }),
+      ],
+    })
+    // 첫 기사를 받아 온 뒤에 중단 플래그가 서는 상황. concurrency를 1로 좁혀 순서를 확정한다 —
+    // 기본값(5)이면 세 링크가 같은 시점에 isAborted를 읽어 몇 건이 건너뛰어질지가 스케줄링에 달린다.
+    configMock.concurrency = 1
+    let aborted = false
+    fetchHtmlMock.mockImplementation(async ({ url }: { url: string }) => {
+      aborted = true
+      return htmlPage(`<div id="articleBody"><p>${'가'.repeat(60)}</p><p>${'나'.repeat(60)}</p></div>`, url)
+    })
+
+    const onArticleDone = vi.fn()
+    const result = await crawlPress(
+      rssPressFullText,
+      RUN_ID,
+      {},
+      { isAborted: () => aborted, onArticleDone }
+    )
+
+    expect(result.articles).toHaveLength(1)
+    expect(result.failures).toHaveLength(0)
+    expect(result.skipped).toEqual(['https://example.com/a/2', 'https://example.com/a/3'])
+    // target(3)은 유지하되 collected는 실제로 처리한 1건에서 멈춘다 — 1/3에서 중단됐다는 사실 그대로.
+    expect(onArticleDone).toHaveBeenCalledTimes(1)
+    expect(onArticleDone).toHaveBeenCalledWith(rssPressFullText.id, 1, 3)
   })
 
   it('링크가 없는 피드 항목은 조용히 버리지 않고 명시적 실패로 기록한다(6일차 리뷰 지적)', async () => {

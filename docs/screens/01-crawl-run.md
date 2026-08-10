@@ -204,7 +204,8 @@
 - [크롤링 시작] 버튼 자리가 [중단](`Square` 아이콘, `variant="outline"`)으로 전환된다.
 - 옵션(③ 언론사당 최대 기사 수) 입력은 실행 중 변경 불가하도록 `disabled` 처리(진행 중인 실행에 영향을 주지 않기 위함).
 - 언론사별 상태 아이콘: `Clock`(대기, 회색) / `LoaderCircle`(진행중, `animate-spin`) / `CircleCheckBig`(완료, 초록 계열은 없으므로 `text-foreground` 유지, 배지로만 구분) / `CircleX`(실패, `text-destructive`).
-- **진행 상태는 1초 간격 폴링으로 갱신한다.** `docs/ROADMAP.md` Task 015가 SSE 대신 폴링을 채택했고, 화면이 쓰는 창구는 `hooks/use-crawl-progress.ts` 하나다. 이 화면은 `GET /api/crawl/{runId}`를 직접 호출하지 않고 이 훅이 돌려주는 `RunProgress`(`overallPercent` · `currentPressName` · `currentCollected/currentTarget` · `pressStatuses[]`)만 그린다.
+- **진행 상태는 1초 간격 폴링으로 갱신한다.** `docs/ROADMAP.md` Task 015가 SSE 대신 폴링을 채택했고, 화면이 쓰는 창구는 `hooks/use-crawl-progress.ts` 하나다. 이 화면은 `GET /api/crawl/{runId}`를 직접 호출하지 않고 이 훅이 돌려주는 `RunProgress`(`overallPercent` · `currentPressName` · `currentCollected/currentTarget` · `pressStatuses[]` · `recovered`)만 그린다.
+- **`recovered: true`는 "이 스냅샷은 근사치"라는 뜻이다**(D-023). 서버가 실행 도중 재시작되면 진행 상태를 `run-meta.json`과 저장된 파일 개수로 복원하는데, 그 경로는 언론사별 **실패를 복원하지 못하고**(I-022) `target`을 `collected`와 같은 값으로 강제한다. 이 플래그가 켜져 있으면 언론사별 상세를 정교하게 그리려 하지 말고 런 레벨 안내 한 줄로 대체한다 — "이 결과는 서버 재시작 후 복구된 값이라 언론사별 상세가 정확하지 않을 수 있어요."(D-030 결정 4)
 - 폴링은 `status`가 종료 상태(`done`/`partial-failed`/`failed`/`aborted`)가 되면 멈춘다 — 완료 화면(④)으로 전환되는 시점이 곧 폴링이 끝나는 시점이다.
 
 ### ④ 완료
@@ -277,6 +278,30 @@
 ```
 - `Skeleton`(`h-12 w-full rounded-lg`) 5개를 세로로 쌓아 언론사 행 자리를 표시한다("N/M개 선택됨" 요약 텍스트와 전체 선택/해제 버튼도 함께 스켈레톤 처리하거나, 개수를 알 수 없으므로 숨김).
 - ④ 실행 패널의 [크롤링 시작]은 목록 로딩이 끝나기 전이므로 `disabled` 유지.
+
+### ⑧ 중단됨 (사용자가 [중단]을 눌러 끝난 실행)
+
+```
+┌─ ④ 크롤링 실행 ────────────────────────┐
+│ ■ 크롤링 중단됨                          │
+│ 3/4개 언론사 완료 · 기사 53건 저장       │
+│ · 41건 미수집                            │
+│ data/runs/20260810-211414/articles/      │
+│──────────────────────────────────────── │
+│ [ 수집 결과 보기 → ]                     │
+│ [ 새로 크롤링하기 ]                      │
+└──────────────────────────────────────────┘
+```
+- **레이아웃은 ④ 완료와 완전히 같다.** 완료 조각을 재사용하고 `status`(`'done' | 'aborted'`)로 아이콘·문구·톤만 갈아 끼운다 — 같은 마크업을 두 곳에서 따로 기르지 않는다(D-030 결정 1).
+- 아이콘은 `Square`. [중단] 버튼이 이미 쓰는 아이콘이라 새로 늘리지 않으면서 `CircleCheckBig`(완료)과 시각적으로 분명히 다르다.
+- **`skippedCount`는 "N건 미수집"으로 쓴다. "실패"라는 낱말을 쓰지 않는다** — 중단으로 요청조차 하지 않은 건수이고, 그 구분이 I-017 수정의 전부였다(D-029). ⑤ 부분 실패는 `failCount > 0` 조건이므로 이 화면과 겹치지 않는다.
+- sonner 토스트: "크롤링 중단됨 — 기사 53건 저장, 41건 미수집"(warning 톤). **destructive를 쓰지 않는다** — 사용자가 스스로 누른 중단이지 오류가 아니다.
+- 언론사별 상태 리스트에서 **중간에 멈춘 언론사**는 `Square`(`text-muted-foreground`) + "중단됨" + `{collected}/{target}건`(예: `8/30건`)으로 그린다. 판정은 새 상태값 없이 파생한다:
+  ```
+  press.status === 'done' && press.collected < press.target
+  ```
+  `pressRunStatus` enum(`waiting | running | done | failed`)에 값을 더하지 않는다 — 정상 완료된 언론사는 `collected === target`이므로 이 조건은 중단된 경우에만 참이다(D-030 결정 3).
+- **`recovered: true`인 스냅샷에서는 이 파생 판정이 항상 거짓이다**(`target`이 `collected`로 강제된다). 그때는 언론사별 "중단됨" 표시를 시도하지 말고 §③의 복구 안내 문구를 쓴다(I-022).
 
 ---
 
@@ -359,7 +384,9 @@
 
 // TODO: 실제 구현 시 아래 상태들을 관리할 useState 필요
 // - selectedPressIds: string[]
-// - crawlStatus: 'idle' | 'running' | 'done' | 'partial-failed'
+// - crawlStatus: 'idle' | 'running' | 'done' | 'partial-failed' | 'failed' | 'aborted'
+//   ('idle'만 화면 전용이고 나머지 5종은 crawlRunStatusSchema 그대로다.
+//    'failed'·'aborted'를 빠뜨리면 종료된 실행이 진행 중 화면에 그대로 머문다)
 // - maxArticlesPerPress: number
 
 import {
@@ -539,6 +566,8 @@ export default function CrawlRunPage() {
             {/* TODO: crawlStatus === 'running' 일 때 아래 "진행 중 조각"으로 교체 표시 */}
             {/* TODO: crawlStatus === 'done' 일 때 아래 "완료 조각"으로 교체 표시 */}
             {/* TODO: crawlStatus === 'partial-failed' 일 때 "완료 조각" + "부분 실패 Alert 조각"을 함께 표시 */}
+            {/* TODO: crawlStatus === 'aborted' 일 때 "완료 조각"을 status='aborted'로 재사용 — §⑧ 중단됨 */}
+            {/* TODO: crawlStatus === 'failed' 일 때도 진행 중 화면에 머물지 않게 종료 처리 */}
           </CardContent>
         </Card>
       </div>
@@ -623,7 +652,7 @@ function RunningPanel() {
 }
 ```
 
-### 완료 조각 (`crawlStatus === 'done'`일 때)
+### 완료 조각 (`crawlStatus === 'done'`일 때 · `'aborted'`이면 §⑧대로 아이콘·문구·토스트만 갈아 끼워 재사용한다)
 
 ```tsx
 import Link from 'next/link'

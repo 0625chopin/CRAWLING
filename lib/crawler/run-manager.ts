@@ -104,6 +104,17 @@ function normalizeFailReason(press: PressSource, rawError: string): string {
 }
 
 /**
+ * 언론사 1곳이 실행 집계에 보태는 몫. **`skippedCount`는 중단 때문에 요청조차 하지 않은 기사 수**로,
+ * `failCount`와 절대 합치지 않는다 — 합쳤더니 중단 버튼을 눌렀을 뿐인 실행이 "실패 43건"으로
+ * 기록됐다(I-017).
+ */
+interface RunCounts {
+  successCount: number
+  failCount: number
+  skippedCount: number
+}
+
+/**
  * 언론사 하나를 크롤해 저장까지 마친다. `nextArticleId`는 실행 전체에서 유일해야 하는 4자리
  * 순번을 다음 값으로 내주는 클로저다 — 언론사가 어떤 순서로 끝나든 이 함수가 순번을 읽고
  * 증가시키는 구간은 동기 코드라(JS 단일 스레드) 두 언론사가 같은 번호를 받는 경쟁이 없다.
@@ -118,7 +129,7 @@ async function runOnePress(
   progress: RunProgress,
   nextArticleId: () => string,
   job: RunJob
-): Promise<{ successCount: number; failCount: number }> {
+): Promise<RunCounts> {
   status.status = 'running'
 
   const result: PressCrawlResult = await crawlPress(
@@ -171,7 +182,11 @@ async function runOnePress(
   }
   recomputeOverallPercent(progress)
 
-  return { successCount: result.articles.length, failCount: result.failures.length }
+  return {
+    successCount: result.articles.length,
+    failCount: result.failures.length,
+    skippedCount: result.skipped.length,
+  }
 }
 
 /**
@@ -196,11 +211,14 @@ async function runInBackground(
       limit(async () => {
         // getPress가 null을 준 언론사(요청 시점엔 있었지만 사라진 id)는 startRun이 이미
         // pressStatuses를 'failed'로 채워 두었다 — 여기서는 집계만 반영하고 크롤을 시도하지 않는다.
-        if (!press) return { successCount: 0, failCount: 1 }
+        if (!press) return { successCount: 0, failCount: 1, skippedCount: 0 }
         // 이 언론사의 차례가 됐을 때(pressConcurrency 대기열에서 빠져나왔을 때) 이미 중단
         // 상태라면 아예 시작하지 않는다 — 'waiting'으로 남아 "시도하지 않았다"를 그대로 보여준다.
         // 이미 실행 중이던 다른 언론사의 Playwright 페이지는 여기서 건드리지 않는다.
-        if (job.aborted) return { successCount: 0, failCount: 0 }
+        //
+        // skippedCount도 0이다: 목록·피드조차 열지 않았으므로 이 언론사에서 몇 건을 건너뛴 것인지
+        // 알 수 없다. 요청 시 지정한 최대 건수로 추정해 채우면 파일에 지어낸 숫자가 남는다.
+        if (job.aborted) return { successCount: 0, failCount: 0, skippedCount: 0 }
         return runOnePress(press, runId, maxArticlesPerPress, pressStatuses[index], progress, nextArticleId, job)
       })
     )
@@ -208,8 +226,9 @@ async function runInBackground(
 
   const successCount = counts.reduce((sum, count) => sum + count.successCount, 0)
   const failCount = counts.reduce((sum, count) => sum + count.failCount, 0)
+  const skippedCount = counts.reduce((sum, count) => sum + count.skippedCount, 0)
 
-  const finished = await finishRun(runId, { successCount, failCount })
+  const finished = await finishRun(runId, { successCount, failCount, skippedCount })
   // finishRun은 실패 건수로만 done/failed/partial-failed를 산출한다(D-007 ③) — 'aborted'는
   // 그 계산 밖이라 여기서 덮어쓴다. successCount/failCount/finishedAt은 finishRun이 이미 기록한
   // 값을 그대로 둔다(중단 시점까지 실제로 수집·저장한 결과이므로 보존한다).

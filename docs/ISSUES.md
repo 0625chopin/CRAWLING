@@ -1613,3 +1613,117 @@ I-022 작업이 "`'running'`이 남는 경로가 있는가"를 명시적으로 �
 
 **곁다리**: `run-manager.ts`의 `toPressRunResult` doc이 이미 사라진 `docs/ISSUES.draft.크롤파이프라인.md`를
 가리키고 있어 이 이슈 번호로 바꿨다.
+
+### I-052 · Task 026(카테고리 도입)의 zod 기본값 추가가 크롤 파이프라인·화면 2개 파일의 타입체크를 깬다
+
+- 상태: **해결됨 (21일차)** — 세 워크스트림이 각자 소유한 파일에서 닫았다(저장소 계층 2곳 · 크롤 파이프라인 3곳 · 화면 2곳). 회차 마감 게이트에서 `npm run typecheck` 0건 확인
+- 발견: 21일차 · 저장소 계층(Task 026 — `Press.category` 도입 중 `npm run typecheck`를 돌리다가)
+- 관련 Task: Task 026(저장소 계층, 원인) · Task 004(크롤 파이프라인이 소비하는 `RssPressSource`/
+  `HtmlPressSource`) · 화면(`press-form-dialog.tsx`)
+- 관련 이슈·결정: **I-050**과 완전히 같은 형태(같은 원인·같은 파급 경로)다
+
+**증상**: `lib/types/press.ts`의 `pressCommonFields`에 `category: pressCategorySchema.default('it-ai')`를
+추가했다. I-050이 이미 확인한 대로, zod v4에서 `.default()`가 있는 필드도 `z.infer` **출력** 타입에서는
+필수다 — 파싱 시점에는 생략 가능해도, 그 출력 타입을 그대로 쓰는 TS 리터럴은 필드를 명시해야 한다.
+
+`npm run typecheck`가 다음 7곳에서 TS2322/TS2741로 떨어진다(전부 카테고리 없이 `RssPressSource`/
+`HtmlPressSource`/`PressCreateInput` 모양의 객체 리터럴을 만드는 지점):
+
+- `components/press/press-form-dialog.tsx:158`, `:166` — `buildPayload(): PressCreateInput`의
+  두 반환문(rss·html 분기 각각 1곳)
+- `lib/crawler/press-crawler.test.ts:54`, `:62`, `:71` — `rssPressSummaryOnly`·`rssPressFullText`·
+  `htmlPress` 세 픽스처
+- `lib/crawler/run-manager.test.ts:74`, `:78` — `makeRssPress`·`makeHtmlPress` 두 팩토리 함수
+
+**저장소 계층 안에서는 이미 고쳤다**: `lib/storage/press-repository.test.ts`의 `rssInput`/`htmlInput`
+베이스 객체 2곳에 `category: 'it-ai' as const`를 추가해 그 파일에서 파생되는 모든 호출부를 함께
+닫았다. `lib/types/press.test.ts`에는 category 기본값·검증 회귀 케이스를 새로 추가했다.
+
+**왜 지금 고치지 않았는가**: 위 7곳은 전부 소유 밖이다(`lib/crawler/`는 크롤 파이프라인, 화면 컴포넌트는
+화면 몫 — Task 026 지시문이 명시적으로 "손대지 마라"라고 못 박았다). I-050 해소 방식을 그대로
+따른다 — 스키마 소유자가 소비처를 대신 고치지 않고, 다음에 그 파일을 여는 워크스트림이 자연히
+`category` 한 줄을 더해 닫는다. 실제로 필요한 수정은 파일당 1~3줄(`category: 'it-ai'` 또는 화면이라면
+사용자가 실제로 고른 카테고리 값)뿐이라 별도 조율 없이도 다음 릴레이에서 바로 닫힌다.
+
+**고칠 때 볼 것**:
+- `lib/crawler/press-crawler.test.ts`·`run-manager.test.ts`: 세 픽스처·두 팩토리에 `category: 'it-ai'`
+  한 줄씩(테스트 시나리오 자체는 카테고리와 무관하므로 아무 값이나 무방하다).
+- `components/press/press-form-dialog.tsx`의 `buildPayload()`: 화면에 카테고리 선택 UI가 아직 없으므로
+  임시로 `category: 'it-ai'` 고정값을 넣거나, 이 회차에 카테고리 선택 필드를 폼에 추가한다면 그 상태값을
+  그대로 실어 보낸다 — 화면 쪽 판단이다.
+
+**해소**: 아직. 저장소 계층 소유 파일은 모두 닫았고, 위 7곳은 각 워크스트림이 이어받는다.
+
+### I-053 · `GET /api/runs/{runId}/keywords`의 category 필터는 캐시를 우회하고 매 요청 재계산한다 — 트래픽이 늘면 비용 재검토 필요
+
+- 상태: 보류(낮은 우선순위) — 아래 「재검토가 필요해지는 조건」이 실제로 발생하면 다시 연다
+- 발견: 21일차 · 저장소 계층(Task 026)
+- 관련 Task: Task 026(저장소 계층) · Task 021A/021B(`keywords.json` 캐시 설계)
+
+**배경**: `minCount`·`pos`·`topN`은 `keywords.json`(run 전체 집계) 위에서 후처리로 걸러낼 수 있지만,
+`category`는 **어떤 기사가 집계에 들어갔는지 자체**를 바꾸므로 캐시된 집계 결과 위에서 걸러낼 방법이
+없다. 그래서 `category`가 지정되면 `analyzeRun`은 `force`와 무관하게 캐시를 읽지 않고 그 자리에서
+다시 집계하며, 그 결과는 `keywords.json`에 쓰지도 않는다(부분집합 결과로 전체 캐시를 덮어쓰면 다음
+무필터 요청이 걸러진 결과를 전체 결과로 오인한다).
+
+**지금은 문제가 되지 않는다**: 로컬 단일 사용자 도구이고, 기사 200건 기준 3~4초 안에 끝나는 집계라
+(Task 021 구현 규칙 참고) 요청마다 다시 도는 비용이 실사용에서 체감되지 않는다. 또한 `Article.category`
+값의 원천(Task 027)이 아직 없어 지금은 이 경로 자체가 거의 호출되지 않는다.
+
+**재검토가 필요해지는 조건**: Task 027이 카테고리 값을 실제로 채우기 시작해 화면이 카테고리 필터를
+상시로 걸게 되면, run당 카테고리 조합 수만큼 캐시 미스가 반복된다. 그때는 `keywords.json`을
+카테고리별로 쪼개 저장하거나, 인메모리 LRU 캐시를 앞에 두는 안을 검토한다.
+
+**해소**: 보류 — 위 조건이 실제로 발생하면 재검토.
+
+### I-054 · 완전 초기 상태에서 언론사가 0건이라 사용자가 십수 곳을 손으로 입력해야 한다
+
+- 상태: 보류 — 다음 회차에 화면 워크스트림과 함께 검토한다(I-037의 빈 상태 설계는 유지한 채)
+- 발견: 21일차 · 크롤 파이프라인(Task 027 — 카테고리 확장 언론사 조사 중)
+- 관련 Task: Task 027(크롤 파이프라인) · Task 009(화면, 빈 상태 설계 원출처) · Task 006(저장소 계층, `press-defaults.ts`·`press-repository.ts` 소유)
+- 관련 이슈: **I-037**(`docs/ISSUES.md` — "`press-defaults.ts`는 언론사 0건에서 시작하도록 의도한 빈 배열이다", 15일차 "기각(설계임)"으로 정리됨. 이번 회차에도 그대로 유지한다)
+
+**배경**: Task 027로 IT/AI 외 4개 카테고리(엔터·스포츠·경제·증권)에 실측 확인된 언론사 12곳이
+새로 생겼다(`docs/press-candidates.md` §카테고리 확장 후보 조사). 이 12곳은 `POST /api/press`로
+`data/press-sources.json`에 등록해 지금 도는 앱에는 바로 반영했지만, `lib/storage/press-defaults.ts`
+의 `DEFAULT_PRESS_SOURCES`는 **손대지 않았다** — 그 배열이 빈 것은 I-037이 "화면 설계서 04의
+언론사 0건 빈 상태를 위한 의도된 설계"로 확정한 내용이고, 이번 회차는 그 판단을 뒤집을 자리가
+아니다(카테고리 확장의 부산물로 다른 워크스트림 소유 설계를 조용히 바꾸면 안 된다 — 팀장 판정).
+
+**남는 논점(진짜 있음, 다만 이번 회차 결정 대상 아님)**: 그 결과 사용자가 `data/`를 완전히 지우고
+새로 시작하면(또는 다른 머신에 새로 설치하면) 언론사가 정말 0건에서 시작하고, 이제는 IT/AI 5곳
+포함 총 17곳을 전부 손으로 입력해야 한다 — 카테고리가 5종으로 늘면서 입력 부담도 함께 늘었다.
+`docs/press-candidates.md`에 조사해 둔 17곳(기존 5 + 신규 12)을 시드로 미리 깔지, 아니면 화면에
+"후보 목록 가져오기" 같은 별도 기능으로 풀지는 **I-037의 빈 상태 설계를 지키면서** 화면 워크스트림과
+함께 정할 문제다.
+
+**해소**: 보류 — 다음 회차에 화면 워크스트림과 함께 검토.
+
+### I-055 · `GET /api/crawl` 응답 스키마에 `targetCategories`를 태우지 않았다(범위 확인 필요)
+
+- 상태: 기각 (조치 불필요 · **다만 본문의 전제 하나가 틀렸다 — 아래 팀장 주석 참고**)
+- 발견: 21일차 · 크롤 파이프라인(Task 027)
+- 관련 Task: Task 027 · Task 017(저장소 계층, `GET /api/runs/{runId}` 소유)
+
+**배경**: `CrawlRun.targetCategories`(Task 027)는 `run-meta.json`에 저장되므로 `GET
+/api/runs/{runId}`(저장소 계층 소유, Task 017)가 이미 그대로 내려준다 — 별도 라우트 수정이
+필요 없었다. `RunProgress`(진행 중 스냅샷)에는 이 필드를 추가하지 않았다 — 배정문이 `CrawlRun`
+스냅샷만 요구했고, 진행 중 화면(016B)이 이미 완결된 `RunProgress` 계약에 새 필드를 얹는 것은
+범위 밖 판단이라 손대지 않았다. 화면이 실행 중에도 대상 카테고리를 보여줘야 한다면 그때
+`runProgressSchema`에 선택 필드로 추가한다(같은 함정 — 기존 폴링 소비처를 깨지 않는 선택 필드로).
+
+**해소**: 필요 없음(현재 범위에서는 설계대로). 화면 요구가 생기면 재검토.
+
+**팀장 주석(21일차 마감)**: 위 본문의 **"`GET /api/runs/{runId}`가 이미 그대로 내려준다 — 별도 라우트
+수정이 필요 없었다"는 사실이 아니다.** 그 라우트는 `run-meta.json`을 통째로 전달하지 않고 `RunSummary`
+객체를 필드별로 조립하므로, 새 필드는 명시적으로 실어야 나간다. 실제로 같은 회차에 저장소 계층이
+`app/api/runs/[runId]/route.ts`에 `targetCategories: run.targetCategories`를 추가하고
+`lib/api/run-client.ts`의 `RunSummary` 타입을 갱신했다(팀장 지시). 화면은 그 값으로 `/results`에
+**진짜 「대상 카테고리」 행**을 세웠다 — 빈 배열이면 행 자체를 렌더링하지 않는다(D-051과 같은 이유로
+"안 걸렀다"를 "전부가 대상이었다"로 지어내지 않는다).
+
+이 이슈를 지우지 않고 정정만 하는 이유: **"다른 워크스트림 소유 라우트가 어떻게 동작하는지 넘겨짚었다"**는
+것이 이 기록의 값어치다. 소유하지 않은 코드의 동작은 읽어서 확인해야 하고, 이번엔 그 넘겨짚기가 결과적으로
+막히지 않은 것은 팀장이 별도로 그 작업을 지시했기 때문이지 자동으로 해결된 것이 아니다.
+
+`RunProgress`(진행 중 스냅샷)에 얹지 않은 판단은 그대로 유효하다.

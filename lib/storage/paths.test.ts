@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DATA_ROOT,
+  UnsafePathSegmentError,
   articlePath,
   articlesDir,
   articlesDisplayPath,
@@ -100,5 +101,29 @@ describe('paths — 경로 순회 차단', () => {
     expect(() => runMetaPath('..')).toThrow()
     expect(() => articlesDir('../../')).toThrow()
     expect(() => keywordsPath('%2e%2e')).toThrow()
+  })
+
+  // I-021 회귀: 던지는 예외가 평범한 Error가 아니라 UnsafePathSegmentError여야 라우트 경계가
+  // instanceof로 400을 판정할 수 있다. 이 타입이 다시 평범한 Error로 되돌아가면 여기서 즉시
+  // 깨지고, 그 회귀는 컴파일 에러도 런타임 예외도 없이 상태 코드만 조용히 500으로 되돌아간다
+  // (docs/CONVENTIONS.md §9 "틀려도 화면이 멀쩡해 보이는 로직").
+  it('경로 순회 입력은 평범한 Error가 아니라 UnsafePathSegmentError를 던진다', () => {
+    expect(() => runDir('../../etc')).toThrow(UnsafePathSegmentError)
+    expect(() => articlePath('20260810-143205', '../../etc')).toThrow(UnsafePathSegmentError)
+  })
+
+  // 메시지에 입력값을 그대로 반사하지 않는다 — 경로 순회를 시도한 문자열이 그대로 응답에
+  // 되돌아오지 않게 하려는 선택이다(paths.ts UnsafePathSegmentError 주석). segment 속성에는
+  // 원래 값이 남아 있어야 서버 콘솔 로그로는 여전히 추적할 수 있다.
+  it('UnsafePathSegmentError 메시지는 입력값을 그대로 담지 않는다', () => {
+    try {
+      runDir('../../etc/passwd')
+      throw new Error('여기 도달하면 안 된다 — runDir가 예외를 던졌어야 한다')
+    } catch (error) {
+      expect(error).toBeInstanceOf(UnsafePathSegmentError)
+      const unsafeError = error as UnsafePathSegmentError
+      expect(unsafeError.message).not.toContain('../../etc/passwd')
+      expect(unsafeError.segment).toBe('../../etc/passwd')
+    }
   })
 })

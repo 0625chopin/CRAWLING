@@ -59,20 +59,61 @@ function extractRawText(value: XmlNodeValue): string {
 }
 
 /**
+ * 이름 있는 엔티티 중 실제 피드에서 나타난 것만 유지한다. `cdataPropName`으로 분리된 CDATA
+ * 구간은 fast-xml-parser가 절대 엔티티로 해석하지 않는다(XML 스펙상 CDATA는 리터럴이고,
+ * 라이브러리 소스로도 확인했다 — `OrderedObjParser.js`가 CDATA 값은 `parseTextData`를 거치지
+ * 않은 원본 `tagExp` 그대로 저장한다) — 그래서 `htmlEntities: true` 같은 파서 옵션을 켜도
+ * CDATA 안의 `&apos;`는 그대로 남는다(I-011 재현으로 직접 확인). 태그 밖 일반 텍스트는 파서가
+ * 이미 처리하므로, 여기서는 CDATA에서 살아남은 잔여물만 상대하면 된다.
+ */
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: ' ',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+}
+
+/**
+ * 숫자 참조(`&#39;`·`&#8217;` 등)는 코드가 하나씩 나타날 때마다 치환 목록에 추가하는 방식으로는
+ * 감당할 수 없다 — `&#8216;`·`&#8217;`(스마트 따옴표) 다음엔 다른 코드가 또 나올 뿐이다. 십진·
+ * 16진 숫자 참조는 코드 포인트 하나의 규칙으로 전부 잡히므로, 이 두 정규식이 "아직 안 드러난"
+ * 숫자 참조 전체를 미리 막는다. 이름 있는 엔티티는 실제로 관측된 것만 위 표에 최소로 둔다.
+ * `@nodable/entities`(fast-xml-parser가 내부적으로 쓰는 전체 이름 표)는 `package.json`에
+ * 선언되지 않은 전이 의존성이라 직접 import하지 않는다(docs/CONVENTIONS.md §3, nanoid와 같은 이유).
+ */
+function decodeHtmlEntities(raw: string): string {
+  return raw
+    .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) => {
+      const code = Number.parseInt(hex, 16)
+      return isValidCodePoint(code) ? String.fromCodePoint(code) : match
+    })
+    .replace(/&#(\d+);/g, (match, dec: string) => {
+      const code = Number.parseInt(dec, 10)
+      return isValidCodePoint(code) ? String.fromCodePoint(code) : match
+    })
+    .replace(
+      /&(nbsp|lt|gt|quot|apos);/gi,
+      (match, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? match
+    )
+    .replace(/&amp;/gi, '&') // 다른 엔티티가 되살린 '&'까지 다시 걸리지 않도록 항상 마지막에 처리한다
+}
+
+/** 잘못된 숫자 참조(범위 밖 코드 포인트)로 `String.fromCodePoint`가 던지면 기사 1건이 무너진다
+ * — 값으로 격리해 원문을 그대로 남긴다(docs/CONVENTIONS.md §7). */
+function isValidCodePoint(code: number): boolean {
+  return Number.isInteger(code) && code >= 0 && code <= 0x10ffff
+}
+
+/**
  * 태그·CDATA 마커·HTML 엔티티를 걷어내 평문으로 만든다.
  * 피드 요약에는 `<![CDATA[...]]>`와 `<img>`·`<a>`가 흔히 섞여 있고,
  * 그대로 두면 키워드 집계에 태그 조각이 들어간다(ROADMAP Task 010A 구현 규칙).
  */
 function toPlainText(raw: string): string {
-  return raw
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/gi, '&')
+  return decodeHtmlEntities(
+    raw.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]*>/g, ' ')
+  )
     .replace(/\s+/g, ' ')
     .trim()
 }

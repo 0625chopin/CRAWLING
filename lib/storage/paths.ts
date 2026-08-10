@@ -15,9 +15,31 @@ export const DATA_ROOT = path.join(process.cwd(), 'data')
  */
 const SAFE_SEGMENT = /^[a-zA-Z0-9_-]+$/
 
+/**
+ * runId·articleId에 허용되지 않는 문자(경로 순회 시도 포함)가 섞였을 때 던지는 전용 타입(I-021).
+ * 이전에는 평범한 `Error`였는데, 라우트 경계가 `instanceof`로 판정할 수 없어 같은 종류의 입력이
+ * 라우트마다 우연히 다른 상태 코드(500 또는 404)로 응답했다 — I-016이 run 생명주기 예외를 문자열
+ * 매칭에서 타입 판정으로 옮긴 것과 같은 계열의 처방이다. `docs/CONVENTIONS.md` §6 기준으로 이건
+ * "검증 실패"이므로 라우트가 이 타입을 `fail(message, 400)`에 매핑한다.
+ *
+ * 메시지에 입력값(`segment`)을 그대로 담지 않는다 — 경로 순회를 시도한 문자열이 그대로 응답에
+ * 반사되는 것을 피한다. `segment`는 서버 콘솔 로그·디버깅용으로만 속성에 남긴다. 이미 있는
+ * D-032(articleId 경로)도 같은 이유로 구체적인 문자 목록 대신 "존재하지 않는 기사입니다"라는
+ * 일반화된 문구를 쓰고 있어, 그 관례를 그대로 따른 것이기도 하다.
+ */
+export class UnsafePathSegmentError extends Error {
+  constructor(
+    public readonly label: string,
+    public readonly segment: string
+  ) {
+    super(`${label} 형식이 올바르지 않습니다`)
+    this.name = 'UnsafePathSegmentError'
+  }
+}
+
 function assertSafeSegment(segment: string, label: string): string {
   if (!SAFE_SEGMENT.test(segment)) {
-    throw new Error(`${label}에 허용되지 않는 문자가 포함되어 있습니다: "${segment}"`)
+    throw new UnsafePathSegmentError(label, segment)
   }
   return segment
 }

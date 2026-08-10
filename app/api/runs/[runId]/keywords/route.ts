@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { fail, fieldErrorsFromZod, ok, withErrorBoundary } from '@/lib/api/response'
 import { analyzeRun } from '@/lib/keyword/analyze-run'
 import { buildKeywordsResponseBody } from '@/lib/keyword/keywords-response'
+import { UnsafePathSegmentError } from '@/lib/storage/paths'
 import { RunNotFoundError } from '@/lib/storage/run-repository'
 import { posTagSchema, type PosTag } from '@/lib/types/keyword'
 
@@ -85,6 +86,10 @@ export async function GET(
       // 없는 run은 D-022가 확정한 전용 타입으로 온다 — 문자열 매칭으로 판정하지 않는다.
       if (error instanceof RunNotFoundError) {
         return fail(error.message, 404)
+      }
+      // runId에 경로 순회 문자가 섞인 경우(I-021) — 검증 실패이므로 500이 아니라 400이다.
+      if (error instanceof UnsafePathSegmentError) {
+        return fail(error.message, 400)
       }
       throw error
     }

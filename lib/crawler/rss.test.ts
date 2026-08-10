@@ -110,6 +110,49 @@ describe('fetchFeed — RSS 2.0', () => {
     expect(result.items[0].publishedAt).toBeUndefined()
   })
 
+  it('CDATA 안에 남은 &apos;를 걷어낸다(I-011 — 아이뉴스24 실크롤 재현 케이스)', async () => {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+      <rss><channel>
+        <item>
+          <title><![CDATA[가천대, 국내 첫 &apos;AI반도체설계전문대학원&apos; 설립…10월부터 신입생 모집]]></title>
+          <link>https://inews24.com/view/1</link>
+          <description><![CDATA[스마트따옴표 &#8216;예시&#8217;와 숫자 참조 &#39;예시&#39;]]></description>
+        </item>
+      </channel></rss>`
+    stubFetch(respond(xml, 'application/xml'))
+
+    const result = await fetchFeed('https://example.com/feed.xml')
+
+    assertOk(result)
+    expect(result.items[0].title).toBe(
+      "가천대, 국내 첫 'AI반도체설계전문대학원' 설립…10월부터 신입생 모집"
+    )
+    expect(result.items[0].title).not.toMatch(/&apos;|&#\d+;/)
+    // &#8216;·&#8217;는 목록에 없는 숫자 참조다 — 개별 치환이 아니라 일반 규칙으로 잡히는지 확인한다.
+    expect(result.items[0].summary).toBe('스마트따옴표 ‘예시’와 숫자 참조 \'예시\'')
+  })
+
+  it('이중 이스케이프(&amp;apos; 등)는 한 번만 풀리고 따옴표로 재해석되지 않는다', async () => {
+    // 순서 함정: 이름 있는 엔티티(apos 등)를 &amp; 치환보다 먼저 처리하면 문제 없지만,
+    // 반대로 &amp;를 먼저 풀면 그 결과로 생긴 '&apos;'가 다음 단계에서 다시 걸려 원문에
+    // 없던 작은따옴표가 생긴다. decodeHtmlEntities는 &amp;를 항상 마지막에 처리해 이를 막는다.
+    const xml = `<rss><channel><item>
+        <title><![CDATA[가격 &amp;apos;5000&amp;apos; 원, 코드 &amp;#39;A&amp;#39;, &amp;amp;amp;]]></title>
+        <link>https://example.com/1</link>
+      </item></channel></rss>`
+    stubFetch(respond(xml, 'application/xml'))
+
+    const result = await fetchFeed('https://example.com/feed.xml')
+
+    assertOk(result)
+    // 한 번만 풀렸다면 '&apos;'·'&#39;'·'&amp;'가 리터럴 텍스트로 그대로 남아야 한다.
+    expect(result.items[0].title).toBe(
+      "가격 &apos;5000&apos; 원, 코드 &#39;A&#39;, &amp;amp;"
+    )
+    // 잘못 풀리면 여기서 작은따옴표(')가 생긴다 — 원문엔 없던 문자다.
+    expect(result.items[0].title).not.toContain("'")
+  })
+
   it('헤더 charset보다 XML 선언의 encoding이 우선한다(작은따옴표 선언 포함)', async () => {
     // 헤더는 us-ascii(단일 바이트 디코더)라고 거짓 주장하지만 선언은 utf-8이다.
     // 선언이 이기지 못하면 한글 멀티바이트가 mojibake로 깨져 아래 기대값과 어긋난다.

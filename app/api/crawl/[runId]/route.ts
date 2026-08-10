@@ -1,5 +1,6 @@
 import { fail, ok, withErrorBoundary } from '@/lib/api/response'
 import { getRunProgress, RunNotFoundError } from '@/lib/crawler'
+import { UnsafePathSegmentError } from '@/lib/storage/paths'
 
 // Node.js 런타임이 이미 기본값이므로 runtime export를 두지 않는다(docs/CONVENTIONS.md §6).
 // GET Route Handler는 이 Next.js 버전에서 기본이 이미 캐시되지 않으므로(설치본 문서
@@ -31,6 +32,11 @@ export async function GET(
       // §7 — 파싱 실패를 조용히 덮어쓰지 않는다).
       if (error instanceof RunNotFoundError) {
         return fail(error.message, 404)
+      }
+      // runId에 경로 순회 문자가 섞인 경우. paths.ts의 assertSafeSegment가 던진다 — 저장소
+      // 계층이 I-021로 확정한 매핑과 같은 형태다(docs/DECISIONS.draft.저장소계층.md).
+      if (error instanceof UnsafePathSegmentError) {
+        return fail(error.message, 400)
       }
       throw error
     }

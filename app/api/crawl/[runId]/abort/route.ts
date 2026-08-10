@@ -1,5 +1,6 @@
 import { fail, ok, withErrorBoundary } from '@/lib/api/response'
 import { abortRun, RunNotAbortableError, RunNotFoundError } from '@/lib/crawler'
+import { UnsafePathSegmentError } from '@/lib/storage/paths'
 
 // Node.js 런타임이 이미 기본값이므로 runtime export를 두지 않는다(docs/CONVENTIONS.md §6).
 
@@ -30,6 +31,11 @@ export async function POST(
       // (D-022가 이 판단을 015A에 열어 두었다).
       if (error instanceof RunNotAbortableError) {
         return fail(error.message, 409)
+      }
+      // runId에 경로 순회 문자가 섞인 경우. paths.ts의 assertSafeSegment가 던진다 — 저장소
+      // 계층이 I-021로 확정한 매핑과 같은 형태다(docs/DECISIONS.draft.저장소계층.md).
+      if (error instanceof UnsafePathSegmentError) {
+        return fail(error.message, 400)
       }
       throw error
     }

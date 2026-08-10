@@ -1,7 +1,7 @@
 import { fail, ok, withErrorBoundary } from '@/lib/api/response'
 import { formatDurationLabel } from '@/lib/api/run-format'
 import { listPress } from '@/lib/storage/press-repository'
-import { articlesDisplayPath } from '@/lib/storage/paths'
+import { articlesDisplayPath, UnsafePathSegmentError } from '@/lib/storage/paths'
 import { getRun, RunNotFoundError } from '@/lib/storage/run-repository'
 
 // Node.js 런타임이 이미 기본값이므로 runtime export를 두지 않는다(docs/CONVENTIONS.md §6).
@@ -28,6 +28,10 @@ export async function GET(
       // 넘긴다(docs/CONVENTIONS.md §7 — 파싱 실패를 조용히 덮어쓰지 않는다).
       if (error instanceof RunNotFoundError) {
         return fail(error.message, 404)
+      }
+      // runId에 경로 순회 문자가 섞인 경우(I-021) — 검증 실패이므로 500이 아니라 400이다.
+      if (error instanceof UnsafePathSegmentError) {
+        return fail(error.message, 400)
       }
       throw error
     }

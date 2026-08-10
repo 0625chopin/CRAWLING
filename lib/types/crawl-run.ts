@@ -66,6 +66,25 @@ export const crawlRunSchema = z.object({
   /** **수집을 시도했다가 실패한** 기사 수. 중단으로 요청조차 하지 않은 건은 여기 들어가지 않는다. */
   failCount: z.number().int().nonnegative(),
   /**
+   * **언론사 단위** 실패 수(I-040 해소) — 피드·목록 페이지 자체를 못 열어 기사를 한 건도 못 건진
+   * 언론사의 개수(`run-manager.ts`의 `isTotalFailure`)다. 바로 위 `failCount`와 **단위가 다르다.**
+   *
+   * 이 필드가 없던 동안 화면은 언론사 단위 사실을 기사 단위 숫자에서 추론해야 했고, 그래서
+   * "한 언론사 안에서 기사 몇 건만 실패"한 실행에 대해 `수집에 실패한 언론사가 있습니다`라는
+   * **그 시점에 실패한 언론사가 0곳인 문구**를 띄웠다. 20일차에 문구를 갈랐지만 그건 화면이
+   * `pressStatuses`에서 매번 다시 세는 방식이라, 서버 재시작 뒤 근사 복원 경로처럼 언론사별
+   * 상세가 없는 스냅샷에서는 여전히 "언론사는 모두 정상"이라고 잘못 말할 수 있었다. 그 판정
+   * 근거를 파일에 직접 남겨 추론을 없앤다.
+   *
+   * **run 단위 `status`는 여전히 `failCount`(기사 단위)로 정한다** — 기사 1건이라도 실패했으면
+   * 그 실행은 실제로 "일부 실패"가 맞기 때문이다. 두 값은 서로를 대체하지 않고 각자의 단위로
+   * 쓰인다.
+   *
+   * **선택 필드 + 기본값 0인 이유**: `skippedCount`·`pressResults`와 같은 함정이다 — 필수로 두면
+   * 이 필드가 생기기 전의 `run-meta.json`이 스키마에서 떨어져 그 run이 목록에서 통째로 사라진다.
+   */
+  failedPressCount: z.number().int().nonnegative().default(0),
+  /**
    * 중단 요청으로 요청조차 하지 않은 기사 수(I-017). `failCount`와 나눠 세지 않으면 중단 버튼을
    * 누른 실행이 "실패 43건"으로 남아 화면이 destructive Alert를 띄운다.
    *
@@ -127,6 +146,18 @@ export const runProgressSchema = z.object({
   successCount: z.number().int().nonnegative(),
   failCount: z.number().int().nonnegative(),
   skippedCount: z.number().int().nonnegative(),
+  /**
+   * 언론사 단위 실패 수(I-040). 단위가 다른 두 숫자를 화면이 헷갈리지 않도록 `CrawlRun`과 같은
+   * 이름·같은 뜻으로 싣는다 — 화면은 이 값으로 "언론사가 실패했다"를 말하고, `failCount`로는
+   * "기사가 실패했다"만 말한다.
+   *
+   * **`undefined`는 0이 아니라 "이 스냅샷으로는 알 수 없다"는 뜻이다.** 근사 복원 경로
+   * (`recovered: true`)에서만 그렇게 온다 — 그 경로는 저장된 기사 개수로 언론사 상태를 되짚기
+   * 때문에 실패한 언론사가 애초에 `'waiting'`으로 보인다. 여기서 0을 채우면 화면이 "언론사는
+   * 모두 정상 처리됐다"고 단정하게 되는데, 그게 바로 I-040이 만들던 거짓말이다. 모르는 것은
+   * 모른다고 두고, 화면이 단위를 단정하지 않는 문구로 갈라 쓴다.
+   */
+  failedPressCount: z.number().int().nonnegative().optional(),
   /**
    * true면 이 스냅샷이 근사 복원이다. 서버 재시작 뒤 레지스트리가 run을 안 들고 있으면
    * `recoverRunProgress`가 두 갈래로 나뉜다(`lib/crawler/run-manager.ts`, Task 014B): `run.pressResults`

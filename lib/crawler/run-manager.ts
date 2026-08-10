@@ -205,6 +205,13 @@ async function runOnePress(
  * 부른다. 즉 여기 도달하는 `'running'`은 **그 두 겹을 모두 빠져나온 미지의 경로**라는 뜻이므로
  * 계속 던지는 것이 맞다.
  */
+/**
+ * 언론사 단위 실패 수(I-040). `PressRunStatus`와 `PressRunResult` 양쪽에 쓰이므로 status만 받는다.
+ */
+function countFailedPresses(statuses: { status: string }[]): number {
+  return statuses.filter((item) => item.status === 'failed').length
+}
+
 function toPressRunResult(status: PressRunStatus): PressRunResult {
   const { status: pressStatus, ...rest } = status
   if (pressStatus === 'running') {
@@ -253,6 +260,10 @@ async function runInBackground(
   const successCount = counts.reduce((sum, count) => sum + count.successCount, 0)
   const failCount = counts.reduce((sum, count) => sum + count.failCount, 0)
   const skippedCount = counts.reduce((sum, count) => sum + count.skippedCount, 0)
+  // 위 세 값은 기사 단위, 이건 언론사 단위다(I-040). 판정은 runOnePress의 isTotalFailure가 이미
+  // 내렸으므로 여기서 다시 계산하지 않고 그 결과가 찍힌 status를 세기만 한다 — 같은 판정을 두
+  // 곳에서 하면 한쪽만 고쳐지는 사고가 난다.
+  const failedPressCount = countFailedPresses(pressStatuses)
 
   // 종료 직전에야 채운다 — 화면(016B)의 완료/부분 실패/중단 요약이 폴링 하나로 이 값을
   // 읽는다(runProgressSchema 주석). 진행 중에는 0인 채로 두어도 진행 중 화면은 이 필드를
@@ -260,9 +271,14 @@ async function runInBackground(
   progress.successCount = successCount
   progress.failCount = failCount
   progress.skippedCount = skippedCount
+  progress.failedPressCount = failedPressCount
 
   const pressResults = pressStatuses.map(toPressRunResult)
-  const finished = await finishRun(runId, { successCount, failCount, skippedCount }, pressResults)
+  const finished = await finishRun(
+    runId,
+    { successCount, failCount, skippedCount, failedPressCount },
+    pressResults
+  )
   // finishRun은 실패 건수로만 done/failed/partial-failed를 산출한다(D-007 ③) — 'aborted'는
   // 그 계산 밖이라 여기서 덮어쓴다. successCount/failCount/finishedAt은 finishRun이 이미 기록한
   // 값을 그대로 둔다(중단 시점까지 실제로 수집·저장한 결과이므로 보존한다).
@@ -303,16 +319,23 @@ async function failRunOnUnexpectedError(
   }
 
   // 이 경로에는 `runInBackground`이 계산하던 기사 단위 집계가 없다(그 코드에 닿기 전에 죽었다).
-  // 진행 훅이 실시간으로 갱신해 온 `collected`를 성공 건수로, `'failed'` 언론사 수를 실패 건수로
-  // 쓴다 — 실패 건수의 단위가 기사가 아니라 언론사인 것은 I-040과 같은 계열의 근사이고, 여기서는
-  // 그 근사가 오히려 안전하다(예외로 죽은 언론사의 기사 단위 실패 수는 셀 방법 자체가 없다).
+  // 진행 훅이 실시간으로 갱신해 온 `collected`를 성공 건수로 쓴다.
   const successCount = pressStatuses.reduce((sum, status) => sum + status.collected, 0)
-  const failCount = pressStatuses.filter((status) => status.status === 'failed').length
+  const failedPressCount = countFailedPresses(pressStatuses)
+  // 여기서만은 failCount(기사 단위)에 언론사 단위 수를 넣는다 — 예외로 죽은 언론사가 기사 몇
+  // 건에서 실패했는지는 셀 방법 자체가 없고, 0으로 두면 finishRun이 이 실행을 'done'으로 판정해
+  // 실패가 통째로 사라진다. 두 값이 같아지는 것은 이 경로뿐이며 의도된 근사다.
+  const failCount = failedPressCount
   progress.successCount = successCount
   progress.failCount = failCount
+  progress.failedPressCount = failedPressCount
 
   try {
-    const finished = await finishRun(runId, { successCount, failCount, skippedCount: 0 }, pressStatuses.map(toPressRunResult))
+    const finished = await finishRun(
+      runId,
+      { successCount, failCount, skippedCount: 0, failedPressCount },
+      pressStatuses.map(toPressRunResult)
+    )
     progress.status = finished.status
   } catch (finishError) {
     console.error(`[run-manager] 중단된 실행의 마무리 기록에도 실패했습니다: ${runId}`, finishError)
@@ -372,6 +395,9 @@ export async function startRun(input: CrawlStartRequest): Promise<{ runId: strin
     successCount: 0,
     failCount: 0,
     skippedCount: 0,
+    // 진행 중에는 0으로 둔다 — 위 세 집계와 같은 규칙이다(종료 직전에 채운다). undefined는 "알 수
+    // 없다"는 별도의 뜻이라(runProgressSchema 주석) 여기 쓰면 안 된다.
+    failedPressCount: 0,
   }
 
   const job: RunJob = { runId: run.id, aborted: false, progress }
@@ -433,6 +459,10 @@ async function recoverRunProgress(runId: string): Promise<RunProgress> {
       successCount: finalRun.successCount,
       failCount: finalRun.failCount,
       skippedCount: finalRun.skippedCount,
+      // 파일의 failedPressCount(I-040)를 그대로 쓰지 않고 pressResults에서 다시 센다 — 이 경로에는
+      // 언론사별 최종 상태가 통째로 있으므로 화면이 보는 목록과 숫자가 어긋날 수 없는 쪽을 고른다.
+      // (이 필드가 생기기 전에 끝난 run은 파일 값이 0이지만 pressResults에는 실패가 들어 있다.)
+      failedPressCount: countFailedPresses(finalRun.pressResults),
       // recovered를 붙이지 않는다 — 위 함수 doc 참고. pressResults는 근사가 아니라 finishRun이
       // 남긴 정확한 최종 값이다.
     }
@@ -471,6 +501,10 @@ async function recoverRunProgress(runId: string): Promise<RunProgress> {
     successCount: finalRun.successCount,
     failCount: finalRun.failCount,
     skippedCount: finalRun.skippedCount,
+    // failedPressCount는 **의도적으로 비운다**(I-040). 이 경로의 pressStatuses는 저장된 기사 개수로
+    // 되짚은 근사라 실패한 언론사가 'waiting'으로 보이고, 파일의 값도 이 필드가 생기기 전에 끝난
+    // run에서는 0이다. 여기서 0을 채우면 화면이 "언론사는 모두 정상 처리됐다"고 단정하는데, 그게
+    // 정확히 I-040이 만들던 거짓말이다 — 모르는 것은 undefined로 두고 화면이 갈라 쓰게 한다.
     // 레지스트리가 아니라 디스크에서 근사 재구성한 스냅샷임을 알린다 — pressStatuses[].target이
     // 실제 목표치가 아니라 collected와 같은 근사값이라는 뜻이다(위 함수 doc 참고, 8일차
     // 교차검증 후속). 화면은 이 플래그로 "확정 완료"가 아니라 "복구된 값"임을 구분해 그릴 수 있다.

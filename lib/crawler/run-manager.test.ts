@@ -96,9 +96,11 @@ function makeRun(overrides: Partial<CrawlRun> = {}): CrawlRun {
     successCount: 0,
     failCount: 0,
     skippedCount: 0,
-    // z.infer 출력 타입은 .default([])가 있어도 필수 필드다(skippedCount와 같은 패턴) —
-    // 앞 구간(저장소 계층)이 crawlRunSchema에 pressResults를 추가하면서 이 리터럴이 깨졌다.
+    // z.infer 출력 타입은 .default(...)가 있어도 필수 필드다(skippedCount와 같은 패턴) —
+    // 앞 구간(저장소 계층)이 crawlRunSchema에 pressResults를 추가하면서 이 리터럴이 한 번 깨졌고
+    // (I-050), failedPressCount(I-040)도 같은 이유로 여기 명시해야 한다.
     pressResults: [],
+    failedPressCount: 0,
     status: 'running',
     ...overrides,
   }
@@ -299,6 +301,8 @@ describe('startRun', () => {
       {
         successCount: 0,
         failCount: 1,
+        // 언론사 자체가 실패로 확정된 경우다 — 기사 단위와 언론사 단위가 둘 다 1이다(I-040).
+        failedPressCount: 1,
         skippedCount: 0,
       },
       // getPress가 null인 언론사는 startRun이 이미 채워 둔 'failed' 상태 그대로 pressResults에
@@ -416,6 +420,10 @@ describe('abortRun — 진행 중인 잡', () => {
       {
         successCount: 2,
         failCount: 1,
+        // **I-040의 핵심 케이스다**: 기사 1건이 실패했지만 언론사는 2건을 건져 'done'이다. 두 숫자의
+        // 단위가 다르다는 사실이 여기서 그대로 드러난다 — 화면은 이 0을 보고 "언론사가 실패했다"는
+        // 말을 쓰지 않는다.
+        failedPressCount: 0,
         skippedCount: 2,
       },
       // 언론사 자체는 기사를 2건 건졌으므로 isTotalFailure가 아니다 — 'done'으로 pressResults에
@@ -545,6 +553,43 @@ describe('getRunProgress — 레지스트리에 없는 run의 복구(서버 재�
     expect(progress.recovered).toBeUndefined()
     // 이미 정확한 값이 있으므로 근사 복원 경로(listArticles로 기사 세기)를 타지 않는다.
     expect(listArticlesMock).not.toHaveBeenCalled()
+    // 언론사 단위 실패 수는 파일의 failedPressCount가 아니라 pressResults에서 다시 센다(I-040) —
+    // 이 필드가 생기기 전에 끝난 run은 파일 값이 0이지만 pressResults에는 실패가 들어 있다.
+    // 화면이 보는 목록(1곳 실패)과 숫자가 어긋나지 않는 쪽을 고른 것이다.
+    expect(progress.failedPressCount).toBe(1)
+  })
+
+  /**
+   * I-040 회귀 방어. 근사 복원 경로는 저장된 기사 개수로 언론사 상태를 되짚기 때문에 **실패한
+   * 언론사가 'waiting'으로 보인다.** 여기서 언론사 단위 실패 수를 0으로 채우면 화면이 "언론사는
+   * 모두 정상 처리됐다"고 단정하는데, 그게 I-040이 만들던 거짓말이다 — 모르는 것은 undefined다.
+   */
+  it('근사 복원 경로는 언론사 단위 실패 수를 0이 아니라 undefined로 남긴다(I-040)', async () => {
+    const LEGACY_ID = '20260809-100000'
+    getRunMock.mockResolvedValue(
+      makeRun({
+        id: LEGACY_ID,
+        status: 'partial-failed',
+        targetPressIds: ['press-a'],
+        finishedAt: '2026-08-09T10:05:00+09:00',
+        successCount: 3,
+        failCount: 2,
+        // 이 필드들이 생기기 전에 끝난 run이다 — 언론사별 상세가 파일에 없다.
+        pressResults: [],
+        failedPressCount: 0,
+      })
+    )
+    listArticlesMock.mockResolvedValue([])
+    getPressMock.mockResolvedValue(makeRssPress('press-a', '언론사 A'))
+
+    const progress = await getRunProgress(LEGACY_ID)
+
+    expect(progress.recovered).toBe(true)
+    // 파일에 0이 있어도 그대로 옮기지 않는다. 0("실패한 언론사 없음")과 undefined("알 수 없음")는
+    // 화면에서 서로 다른 문구로 갈린다.
+    expect(progress.failedPressCount).toBeUndefined()
+    // 기사 단위 실패 수는 파일에 정확히 남아 있으므로 그대로 쓴다 — 못 쓰는 건 언론사 단위뿐이다.
+    expect(progress.failCount).toBe(2)
   })
 })
 

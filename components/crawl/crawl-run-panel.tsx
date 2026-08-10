@@ -226,19 +226,24 @@ function DonePanel({
   const successPressCount = pressStatuses.filter((item) => item.status === 'done').length
   const failedPresses = pressStatuses.filter((item) => item.status === 'failed')
 
-  // run 상태(partial-failed/failed)를 정하는 finishRun의 failCount는 기사 단위 실패 건수다
-  // (lib/storage/run-repository.ts). 반면 failedPresses는 언론사 전체 실패(피드·목록 페이지
-  // 자체를 못 연 경우)만 센 언론사 단위다. 한 언론사 안에서 기사 몇 건만 실패하고 나머지는
-  // 저장에 성공하면 그 언론사는 'done'인데 run은 hasFailures가 되어, 언론사 단위 실패가
-  // 0곳인 채로 hasFailures가 true일 수 있다(I-040) — 문구를 이 두 값으로 갈라 쓴다.
-  const hasFailedPresses = failedPresses.length > 0
+  // run 상태(partial-failed/failed)를 정하는 finishRun의 failCount는 **기사 단위** 실패 건수이고,
+  // failedPressCount는 **언론사 단위**다(I-040). 한 언론사 안에서 기사 몇 건만 실패하고 나머지는
+  // 저장에 성공하면 그 언론사는 'done'인데 run은 hasFailures가 되므로, "실패한 언론사가 있다"는
+  // 말을 failCount로 해서는 안 된다.
+  //
+  // 이 값을 pressStatuses에서 직접 세지 않고 서버가 준 숫자를 쓰는 이유: 서버 재시작 뒤 근사
+  // 복원 경로에서는 실패한 언론사가 'waiting'으로 보여, 세어 보면 늘 0곳이 나온다. 서버는 그
+  // 경우 0 대신 undefined를 보내 "알 수 없다"를 구분해 준다 — 아래 세 갈래가 그것이다.
+  const failedPressCount = progress.failedPressCount
+  const isPressUnitKnown = failedPressCount !== undefined
+  const hasFailedPresses = isPressUnitKnown && failedPressCount > 0
 
   const heading = isAborted ? '크롤링 중단됨' : hasFailures ? '크롤링 완료 (일부 실패)' : '크롤링 완료'
 
   const summary = isAborted
     ? `${fullyDoneCount}/${totalPressCount}개 언론사 완료 · 기사 ${successCount}건 저장 · ${skippedCount}건 미수집`
     : hasFailedPresses
-      ? `${successPressCount}개 성공 · ${failedPresses.length}개 실패 · 기사 ${successCount}건 저장`
+      ? `${successPressCount}개 성공 · ${failedPressCount}개 실패 · 기사 ${successCount}건 저장`
       : hasFailures
         ? `${totalPressCount}개 언론사 · 기사 ${successCount}건 저장 · ${failCount}건 개별 실패`
         : `${totalPressCount}개 언론사 · 기사 ${successCount}건 저장`
@@ -258,7 +263,11 @@ function DonePanel({
 
       {hasFailures && (
         <ErrorAlert
-          title={hasFailedPresses ? `${failedPresses.length}개 언론사 수집 실패` : `기사 ${failCount}건 개별 수집 실패`}
+          title={
+            hasFailedPresses
+              ? `${failedPressCount}개 언론사 수집 실패`
+              : `기사 ${failCount}건 개별 수집 실패`
+          }
           description={
             hasFailedPresses
               ? // failReason은 서버가 수집 방식(RSS/HTML)에 맞는 문구로 이미 만들어 보낸다
@@ -266,12 +275,18 @@ function DonePanel({
                 failedPresses
                   .map((item) => `${item.name}(${item.failReason ?? '알 수 없는 오류'})`)
                   .join(', ')
-              : // 이 분기는 죽은 코드가 아니다 — run 상태(partial-failed/failed)를 정하는
-                // finishRun의 failCount는 기사 단위 실패 건수라, 언론사 자체는 하나도 전체
-                // 실패(failedPresses)하지 않았는데도 개별 기사만 몇 건 실패하면 여기 도달한다
-                // (I-040). "언론사가 실패했다"는 말을 쓰지 않아야 한다 — 언론사 목록은
-                // 전부 'done'으로 보일 것이기 때문이다.
-                `언론사는 모두 정상 처리됐지만, 개별 기사 ${failCount}건이 수집에 실패했습니다.`
+              : isPressUnitKnown
+                ? // 이 분기는 죽은 코드가 아니다 — run 상태(partial-failed/failed)를 정하는
+                  // finishRun의 failCount는 기사 단위 실패 건수라, 언론사 자체는 하나도 전체
+                  // 실패하지 않았는데도 개별 기사만 몇 건 실패하면 여기 도달한다(I-040).
+                  // "언론사가 실패했다"는 말을 쓰지 않아야 한다 — 언론사 목록은 전부 'done'으로
+                  // 보일 것이기 때문이다. 서버가 언론사 단위 실패 0곳임을 확정해 줬을 때만 쓴다.
+                  `언론사는 모두 정상 처리됐지만, 개별 기사 ${failCount}건이 수집에 실패했습니다.`
+                : // 근사 복원 스냅샷이라 언론사 단위 실패 수를 알 수 없다. 예전에는 이 경우에도
+                  // 위 문구를 써서 "언론사는 모두 정상"이라고 단정했는데, 그 경로의 언론사 상태는
+                  // 저장된 기사 개수로 되짚은 근사라 실패한 언론사가 '대기'로 보일 뿐이다 —
+                  // 모르는 것을 아는 것처럼 말하지 않는다.
+                  `기사 ${failCount}건이 수집에 실패했습니다. 서버가 재시작되어 어느 언론사에서 실패했는지는 복구하지 못했습니다.`
           }
         />
       )}

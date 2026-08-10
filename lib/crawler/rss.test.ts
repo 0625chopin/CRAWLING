@@ -133,9 +133,10 @@ describe('fetchFeed — RSS 2.0', () => {
   })
 
   it('이중 이스케이프(&amp;apos; 등)는 한 번만 풀리고 따옴표로 재해석되지 않는다', async () => {
-    // 순서 함정: 이름 있는 엔티티(apos 등)를 &amp; 치환보다 먼저 처리하면 문제 없지만,
-    // 반대로 &amp;를 먼저 풀면 그 결과로 생긴 '&apos;'가 다음 단계에서 다시 걸려 원문에
-    // 없던 작은따옴표가 생긴다. decodeHtmlEntities는 &amp;를 항상 마지막에 처리해 이를 막는다.
+    // 순서 함정: &amp;를 먼저 풀면 그 결과로 생긴 '&apos;'가 다음 단계에서 다시 걸려 원문에
+    // 없던 작은따옴표가 생긴다. 예전에는 &amp;를 맨 마지막에 처리해 이 방향만 막았고, 반대
+    // 방향(숫자 참조가 되살린 &)은 그대로 뚫려 있었다 — 그게 I-043이다. 지금은 스캔이 한 번뿐이라
+    // 양방향 모두 성립하지 않는다.
     const xml = `<rss><channel><item>
         <title><![CDATA[가격 &amp;apos;5000&amp;apos; 원, 코드 &amp;#39;A&amp;#39;, &amp;amp;amp;]]></title>
         <link>https://example.com/1</link>
@@ -151,6 +152,45 @@ describe('fetchFeed — RSS 2.0', () => {
     )
     // 잘못 풀리면 여기서 작은따옴표(')가 생긴다 — 원문엔 없던 문자다.
     expect(result.items[0].title).not.toContain("'")
+  })
+
+  /**
+   * I-043 회귀 방어. 위 테스트의 거울상이다 — `&amp;`가 아니라 **숫자 참조**로 이스케이프한 `&`가
+   * 뒤 단계에서 다시 엔티티로 스캔되던 경로다. `&apos;` 하나로 좁혀 읽으면 안 된다: 이름 표의
+   * 다섯 개가 전부 같은 경로로 재해석됐다.
+   */
+  it.each([
+    ['&#38;apos;', '&apos;'],
+    ['&#x26;apos;', '&apos;'],
+    ['&#38;lt;script&#38;gt;', '&lt;script&gt;'],
+    ['&#38;nbsp;', '&nbsp;'],
+    ['&#38;quot;', '&quot;'],
+    ['&#38;amp;', '&amp;'],
+  ])('숫자 참조가 되살린 &가 다시 엔티티로 재해석되지 않는다: %s (I-043)', async (raw, expected) => {
+    const xml = `<rss><channel><item>
+        <title><![CDATA[${raw}]]></title>
+        <link>https://example.com/1</link>
+      </item></channel></rss>`
+    stubFetch(respond(xml, 'application/xml'))
+
+    const result = await fetchFeed('https://example.com/feed.xml')
+
+    assertOk(result)
+    // 숫자 참조는 한 번 풀려 '&'가 되고, 그 뒤에 붙은 엔티티 모양 문자열은 원문 그대로 남아야 한다.
+    expect(result.items[0].title).toBe(expected)
+  })
+
+  it('16진·10진 숫자 참조와 이름 있는 엔티티가 한 문자열에 섞여도 각각 한 번씩만 풀린다', async () => {
+    const xml = `<rss><channel><item>
+        <title><![CDATA[&#x27;a&#39;b&apos;c&amp;d&#38;quot;]]></title>
+        <link>https://example.com/1</link>
+      </item></channel></rss>`
+    stubFetch(respond(xml, 'application/xml'))
+
+    const result = await fetchFeed('https://example.com/feed.xml')
+
+    assertOk(result)
+    expect(result.items[0].title).toBe(`'a'b'c&d&quot;`)
   })
 
   it('헤더 charset보다 XML 선언의 encoding이 우선한다(작은따옴표 선언 포함)', async () => {

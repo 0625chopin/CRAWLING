@@ -78,3 +78,64 @@ Task 007의 `listRuns()`는 `data/runs/` 아래 전체를 순회해야 하는데
 **해소**: 같은 회차에 `runsRootDir()`를 추가하고 `runDir(runId)`가 그 위에서 조립되도록 정리했다(2일차,
 저장소 계층). 리팩터링 후에도 `assertSafeSegment`가 조립 전에 호출되는 순서가 유지되어 경로 순회 차단
 회귀 케이스 17건이 전부 그대로 통과함을 리뷰어가 재실행으로 확인했다.
+
+### I-004 · 조각 A만 끝난 시점에는 그 조각의 DoD를 브라우저에서 검증할 수 없다
+
+- 상태: 해결됨(D-006으로 규칙 확정)
+- 발견: 3일차 · 화면(Playwright MCP 시나리오 초안 작성 중)
+- 관련 Task: Task 009A · Task 012A · Task 016A · Task 018A
+
+화면 Task를 A/B로 쪼갤 때 **라우트에 도달하게 만드는 `page.tsx`가 한쪽에만 배정**되어 있어, 다른 쪽 조각만
+끝난 시점에는 그 조각의 DoD를 Playwright MCP로 태울 수 없다. 네 군데에서 같은 구조가 발견됐다.
+
+- **009A** — 표/카드 컴포넌트는 009A가 만들지만 `app/press/page.tsx`는 009B 몫이라, 009A 시점에 `/press`는
+  여전히 `ScreenPlaceholder`다. 009A의 DoD(수집 설정 컬럼 표시·375/768/1280 반응형)를 확인할 방법이 없다.
+- **016A** — `docs/screens/01-crawl-run.md`의 스켈레톤은 [크롤링 시작] 버튼을 `app/page.tsx`에 직접 그리는데,
+  같은 문서의 파일 분할 경계 표는 그 구간을 `crawl-run-panel.tsx`(016B, 크롤 파이프라인 몫)로 보낸다.
+  016A 담당이 버튼을 직접 그려도 되는지 판단할 근거가 없다.
+- **012A/012B** — 012A가 `page.tsx`를 만들고 012B가 `stopword-add-card.tsx`만 만드는데, 012B 파일 목록에
+  `page.tsx` 재수정이 없어 컴포넌트를 어떻게 끼워 넣는지가 문서에 없다.
+- **018A** — `article-file-list.tsx`·`article-preview.tsx`가 둘 다 018B 몫이라, 018A만 끝난 시점에
+  마스터-디테일 우측 절반이 어떻게 보이는지 정의가 없다.
+
+**해소**: D-006으로 "조각 A는 짝 조각을 import하는 형태로 라우트를 완성하고, DoD 검증 시점은 짝 조각 완료
+회차"라는 규칙을 확정했다. `docs/screens/playwright-scenarios.draft.md`가 이미 그 전제로 작성돼 있다.
+
+### I-005 · 한글 전용 언론사명은 슬러그가 빈 문자열이 된다
+
+- 상태: 해결됨
+- 발견: 3일차 · 저장소 계층(Task 006)
+- 관련 Task: Task 006 · Task 008A · Task 009B
+
+Press id는 이름에서 만든 슬러그(소문자·영숫자·하이픈)인데, "전자신문"·"보안뉴스"처럼 ASCII 영숫자가 전혀 없는
+이름은 슬러그가 빈 문자열이 된다. `docs/press-candidates.md`의 후보 11건 중 순한글 이름이 실제로 존재하므로,
+폴백(`press`·`press-2`·…)을 그대로 두면 등록된 언론사 id가 이름과 무관해진다.
+
+**해소**: D-005로 `pressCreateSchema`에 선택 필드 `id`를 추가하고, 미지정 시에만 슬러그 폴백을 태우기로 했다.
+
+### I-006 · `listRuns`/`listArticles`가 손상된 개별 파일을 조용히 건너뛴다
+
+- 상태: 열림(낮은 우선순위)
+- 발견: 3일차 · 화면(Task 007 교차검증 중)
+- 관련 Task: Task 007 · Task 017
+
+값 격리 원칙(`docs/CONVENTIONS.md` §7)은 지켰지만, 사용자가 `data/`를 손으로 편집하다 파일을 깨뜨리면 그 기사·
+실행이 목록에서 사라지고 **왜 사라졌는지 알 방법이 없다.** 화면 설계서 02에도 "N건 숨겨짐" 같은 UI가 없어 지금
+당장 화면에서 할 일은 없다.
+
+리뷰어 권고는 **화면 변경 없이 서버 콘솔에 `console.warn`으로 손상된 runId/articleId를 남기는 것**이다.
+저비용이므로 Task 017 착수 회차에 함께 처리한다.
+
+### I-007 · `ArticleMeta`/`ArticleListItem` 타입이 `lib/types/`가 아니라 `lib/storage/`에 있다
+
+- 상태: 열림
+- 발견: 3일차 · 화면(Task 007 교차검증 중)
+- 관련 Task: Task 007 · Task 017 · Task 018A
+
+`ArticleMeta`는 `articleSchema.omit({ content: true })`로 파생된 도메인 뷰 타입이라 `lib/types/article.ts`가
+제자리다. 같은 저장소에 선례도 있다 — `lib/types/keyword.ts`의 `keywordRankItemSchema`가 "화면이 쓰는 파생 뷰"
+라는 동일한 성격인데 `lib/types/`에 있다. Task 007 담당(크롤 파이프라인)은 이번 회차에 `lib/types/`가 읽기
+전용이라 옮길 수 없었다.
+
+**해소 예정**: `lib/types/`를 소유한 저장소 계층이 옮기고, 크롤 파이프라인이 import 경로를 따라 고친다.
+두 영역이 함께 손대야 하므로 회차 배치에서 조율한다.

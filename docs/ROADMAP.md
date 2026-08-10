@@ -40,13 +40,13 @@
 | Phase | 범위 | Task | 완료 | 상태 |
 |-------|------|------|------|------|
 | **Phase 0** | 완료된 기반 (프로젝트 골격·앱 셸·Kiwi 검증) | 3 (001–003) | 3 | ✅ 완료 |
-| **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 2 | 🟡 진행 중 |
+| **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 4 | ✅ 완료 |
 | **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 0 | ⬜ 대기 |
 | **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 0 | ⬜ 대기 |
 | **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 0 | ⬜ 대기 |
 | **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 1 | 🟡 진행 중 |
 | **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 0 | ⬜ 대기 |
-| **합계** | | **25** | **6** | **24%** |
+| **합계** | | **25** | **8** | **32%** |
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -123,7 +123,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ---
 
-## Phase 1: 도메인 타입 + 파일 저장소 계층
+## Phase 1: 도메인 타입 + 파일 저장소 계층 ✅
 
 **목표** — PRD 데이터 모델 5종(Press / CrawlRun / Article / KeywordCount / Stopword)을 `fs` 위에 그대로 앉히고, 이후 모든 Task가 파일 경로를 직접 만지지 않고 **레포지토리 함수만 호출**하도록 만든다. PRD가 "데이터가 쌓이면 저장소 구현체만 교체"를 명시했으므로, 이 Phase의 산출물이 그 교체 지점이다.
 
@@ -185,7 +185,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 006 · 언론사 · 불용어 레포지토리
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F007` `F008` &nbsp;|&nbsp; 선행: Task 005
+- [x] 완료 (3일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F007` `F008` &nbsp;|&nbsp; 선행: Task 005
+- **결과물**: `lib/storage/{press-repository,stopword-repository,press-defaults,stopword-defaults}.ts`, `lib/storage/{press-repository,stopword-repository}.test.ts`
+- **남긴 한계**: 한글 전용 언론사명은 슬러그가 빈 문자열이 되는 문제가 드러나, `pressCreateSchema`에 **선택 필드 `id`** 를 추가하고 미지정 시에만 슬러그 폴백을 태우도록 바꿨다(`docs/DECISIONS.md` D-005). `getStopwordSet()`은 원본 대소문자를 그대로 담는다 — 대소문자 무시 매칭이 필요하면 Task 020A에서 정한다.
 - **참조**: `docs/PRD.md` §Press·§Stopword, `docs/kiwi-verification.md` §6(불용어 근거·`이번` 추가 권고), `docs/screens/05-stopword-manage.md`
 - **생성/수정 파일**
   - `lib/storage/press-repository.ts` — `listPress({ activeOnly })` / `getPress(id)` / `createPress(input)` / `updatePress(id, patch)` / `deletePress(id)` / `setPressActive(id, isActive)`
@@ -209,7 +211,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 007 · 실행 · 기사 · 키워드 레포지토리 및 기사 txt 포맷
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F003` `F004` `F005` &nbsp;|&nbsp; 선행: Task 005
+- [x] 완료 (3일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F003` `F004` `F005` &nbsp;|&nbsp; 선행: Task 005
+- **결과물**: `lib/storage/{article-file,run-repository,article-repository,keyword-repository}.ts`, `lib/storage/article-file.test.ts`(왕복 회귀 14케이스)
+- **남긴 한계**: 시각 필드를 `toISOString()`(UTC `Z`)으로 저장한다 — 서버와 브라우저가 같은 로컬 머신이라 화면이 `Date`로 파싱만 하면 KST로 보이지만, **문자열을 슬라이싱해 시:분을 뽑으면 9시간 어긋난다**(`runId` 폴더명은 로컬 시각으로 조립되므로 raw 값끼리는 달라 보인다). `listRuns`/`listArticles`는 손상된 개별 파일을 조용히 건너뛴다(`docs/ISSUES.md` I-006). `ArticleMeta` 타입이 `lib/types/`가 아니라 `lib/storage/article-file.ts`에 있다(I-007).
 - **참조**: `docs/PRD.md` §CrawlRun·§Article·§KeywordCount, `docs/screens/02-collect-result.md`(파일 목록·본문 미리보기가 요구하는 필드)
 - **생성/수정 파일**
   - `lib/storage/article-file.ts` — txt 직렬화 `serializeArticle(article): string` / 역직렬화 `parseArticle(text, { runId, articleId }): Article`
@@ -237,7 +241,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
   - `keywords.json` 구조는 `{ runId, analyzedAt, summary: AnalysisSummary, items: KeywordCount[] }`. `items`는 **불용어·1글자 필터까지 적용한 전체 집계**를 담고, 최소 등장 횟수·품사·Top N은 담지 않는다(사유는 Task 021).
   - `createRun`은 `runId`를 `YYYYMMDD-HHmmss`(로컬 시각)로 만들고 **충돌 시 초 단위 뒤에 접미 숫자**를 붙인다.
 - **완료 조건 (DoD)**
-  - [ ] `serializeArticle` → `parseArticle` 왕복에서 모든 필드가 원본과 일치한다(제목에 콜론·`#`·개행이 포함된 경우 포함). **`lib/storage/article-file.test.ts`에 이 케이스들을 남기고 `npm run test`로 판정한다** — 왕복이 깨져도 화면은 멀쩡해 보인다.
+  - [ ] `serializeArticle` → `parseArticle` 왕복에서 모든 필드가 원본과 일치한다. **제목·URL에 콜론·`#`가 포함된 경우는 원본 그대로 왕복하고, 개행이 포함된 경우는 위 구현 규칙대로 공백으로 치환된 값과 일치한다**(메타 라인은 한 물리 줄이라 개행을 보존하려면 이스케이프 포맷이 필요한데, 제목은 크롤 단계에서 이미 개행이 걸러져 오고 화면 설계서 02도 제목을 단일 행으로만 쓴다 — 3일차 교차검증 판정). **`lib/storage/article-file.test.ts`에 이 케이스들을 남기고 `npm run test`로 판정한다** — 왕복이 깨져도 화면은 멀쩡해 보인다.
   - [ ] 본문에 빈 줄이 섞인 기사를 왕복시켜도 **문단 개행이 그대로 살아 있다**(Task 013이 개행을 보존해 저장하므로 저장 계층이 그것을 접으면 안 된다).
   - [ ] 기사 200건이 저장된 run에서 `listArticles`가 본문을 읽지 않고 목록을 돌려준다.
   - [ ] `listRuns()`가 최신 실행부터 정렬되어 반환된다(화면 설계서 02의 셀렉터 기본값 = 최신 run).

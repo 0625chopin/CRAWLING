@@ -21,9 +21,9 @@ export function SiteHeader() {
             className="flex shrink-0 items-center gap-2 text-sm font-semibold sm:text-base"
           >
             <Bug aria-hidden="true" className="size-5" />
-            <span className="hidden lg:inline">
-              IT/AI 뉴스 핫 키워드 크롤러
-            </span>
+            {/* 카테고리가 IT/AI 외 4종으로 늘면서(Task 028) "IT/AI 뉴스"는 더 이상 정확하지
+                않다 — 제품 이름이라 과하게 길어지지 않는 선에서 카테고리 중립 이름으로 바꿨다. */}
+            <span className="hidden lg:inline">뉴스 핫 키워드 크롤러</span>
             <span className="lg:hidden">핫키워드 크롤러</span>
           </Link>
           <MainNav />

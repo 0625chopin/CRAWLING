@@ -23,6 +23,7 @@ import { fetchKeywords, type KeywordsResult } from '@/lib/api/keyword-client'
 import { fetchRuns, type RunListItem } from '@/lib/api/run-client'
 import { addStopword } from '@/lib/api/stopword-client'
 import type { PosTag } from '@/lib/types/keyword'
+import type { PressCategory } from '@/lib/types/press'
 
 type RunsLoadState = 'loading' | 'error' | 'ready'
 type AnalysisStatus = 'idle' | 'loading' | 'success' | 'error'
@@ -67,6 +68,8 @@ function KeywordsPageContent() {
   const [minCount, setMinCount] = useState(DEFAULT_MIN_COUNT)
   const [posFilter, setPosFilter] = useState<PosTag[]>(DEFAULT_POS)
   const [topN, setTopN] = useState(DEFAULT_TOP_N)
+  // 카테고리 필터(Task 028). 빈 배열 = 전체 — fetchKeywords의 categories 옵션과 같은 규칙.
+  const [categories, setCategories] = useState<PressCategory[]>([])
 
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle')
   const [result, setResult] = useState<KeywordsResult | null>(null)
@@ -101,13 +104,20 @@ function KeywordsPageContent() {
     setMinCount(DEFAULT_MIN_COUNT)
     setPosFilter(DEFAULT_POS)
     setTopN(DEFAULT_TOP_N)
+    setCategories([])
     setAnalysisStatus('idle')
     setResult(null)
     setAnalysisError(null)
   }
 
   const runAnalysis = useCallback(
-    async (options: { minCount: number; pos: PosTag[]; topN: number; force: boolean }) => {
+    async (options: {
+      minCount: number
+      pos: PosTag[]
+      topN: number
+      force: boolean
+      categories: PressCategory[]
+    }) => {
       if (!selectedRunId) return false
       setAnalysisStatus('loading')
       setAnalysisError(null)
@@ -131,10 +141,12 @@ function KeywordsPageContent() {
   // force=true뿐이고, 그건 불용어 추가 직후(handleAddStopword)에만 자동으로 붙는다
   // (docs/ROADMAP.md Task 021 구현 규칙 "캐시와 재분석의 경계").
   const handleSubmit = useCallback(() => {
-    void runAnalysis({ minCount, pos: posFilter, topN, force: false })
-  }, [runAnalysis, minCount, posFilter, topN])
+    void runAnalysis({ minCount, pos: posFilter, topN, force: false, categories })
+  }, [runAnalysis, minCount, posFilter, topN, categories])
 
-  // 상태 ⑤(결과 0건)의 [필터 초기화] — 기본값으로 되돌리고 즉시 재조회한다.
+  // 상태 ⑤(결과 0건)의 [필터 초기화] — 기본값으로 되돌리고 즉시 재조회한다. 카테고리 필터는
+  // "필터가 과해 결과가 없다"는 시나리오의 원인이 아닐 수 있어(오히려 사용자가 의도적으로
+  // 좁힌 값일 수 있다) 최소 등장 횟수·품사·표시 개수만 되돌리고 카테고리는 유지한다.
   const handleResetFilters = useCallback(() => {
     setMinCount(DEFAULT_MIN_COUNT)
     setPosFilter(DEFAULT_POS)
@@ -144,8 +156,17 @@ function KeywordsPageContent() {
       pos: DEFAULT_POS,
       topN: DEFAULT_TOP_N,
       force: false,
+      categories,
     })
-  }, [runAnalysis])
+  }, [runAnalysis, categories])
+
+  // "카테고리가 안 맞아 0건"(21일차 저장소 계층 인수인계) 전용 초기화 — minCount·품사는
+  // 원인이 아니므로 건드리지 않고 카테고리만 비운다. handleResetFilters와 반대로 카테고리만
+  // 되돌리는 이유는 위 주석과 같다: 서로 다른 원인에는 서로 다른 해법을 준다.
+  const handleResetCategoryFilter = useCallback(() => {
+    setCategories([])
+    void runAnalysis({ minCount, pos: posFilter, topN, force: false, categories: [] })
+  }, [runAnalysis, minCount, posFilter, topN])
 
   // 랭킹 행의 Ban 버튼 — 불용어로 추가한 뒤 force=true로 다시 분석해 랭킹에서 즉시 사라지게
   // 한다(ROADMAP Task 022 구현 규칙 "클릭 시 불용어 추가 후 자동 재분석까지 이어준다").
@@ -159,18 +180,45 @@ function KeywordsPageContent() {
         setPendingKeyword(null)
         return
       }
-      const reanalyzed = await runAnalysis({ minCount, pos: posFilter, topN, force: true })
+      const reanalyzed = await runAnalysis({
+        minCount,
+        pos: posFilter,
+        topN,
+        force: true,
+        categories,
+      })
       setPendingKeyword(null)
       if (reanalyzed) {
         toast.success(`"${keyword}"을(를) 불용어로 추가하고 다시 분석했습니다`)
       }
     },
-    [runAnalysis, minCount, posFilter, topN]
+    [runAnalysis, minCount, posFilter, topN, categories]
   )
 
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? null
   const topItems = result?.items.slice(0, 5) ?? []
   const tableItems = result?.items ?? []
+
+  // "결과 0건"의 세 원인을 가른다(21일차 저장소 계층 인수인계 — sourceArticleCount·
+  // uncategorizedCount 신설).
+  // ① result.message가 있으면 원본 자체가 0건. 이전에는 이 값이 조건 가드에만 쓰이고 화면
+  //    어디에도 렌더링되지 않아, "이 실행에는 수집된 기사가 없어…"라는 서버의 정확한 문장을
+  //    화면이 버리고 대신 "minCount를 낮추라"는 엉뚱한 일반 안내를 보여줬다(팀장 지적) —
+  //    isMessageEmpty로 이 경우를 최우선으로 가르고 서버 문구를 그대로 보여준다.
+  // ② categories.length > 0 && uncategorizedCount > 0이면 미상이라 제외된 것 — 그 사실은 위
+  //    "카테고리 미상 N건" 문구가 이미 알려준다(이 컴포넌트 아래에서 늘 렌더링됨, 변경 없음).
+  // ③ 그 나머지 — 카테고리 필터가 걸려 있고 미상 때문이 아닌데(uncategorizedCount === 0)
+  //    필터를 통과한 원본 자체가 0건(`summary.articleCount === 0`)이면, 진짜 원인은
+  //    minCount·품사가 아니라 "고른 카테고리와 맞는 기사가 없다"이다 — 그때만 별도 문구로 가른다.
+  //    articleCount > 0인데 items가 빈 경우(카테고리는 통과했지만 minCount·품사가 다 걸러낸 경우)는
+  //    여전히 기존 일반 안내가 맞는 원인이라 분기하지 않는다.
+  const isMessageEmpty = tableItems.length === 0 && Boolean(result?.message)
+  const isCategoryMismatchEmpty =
+    tableItems.length === 0 &&
+    !result?.message &&
+    categories.length > 0 &&
+    (result?.uncategorizedCount ?? 0) === 0 &&
+    result?.summary.articleCount === 0
 
   return (
     <>
@@ -215,6 +263,8 @@ function KeywordsPageContent() {
             onPosFilterChange={setPosFilter}
             topN={topN}
             onTopNChange={setTopN}
+            categories={categories}
+            onCategoriesChange={setCategories}
             onSubmit={handleSubmit}
             disabled={analysisStatus === 'loading'}
             hasResult={result !== null}
@@ -239,6 +289,14 @@ function KeywordsPageContent() {
             <>
               {/* ② 분석 요약 — summary는 필터에 흔들리지 않는 전체 기준값이라 항상 그대로 보여준다 */}
               <AnalysisSummary summary={result.summary} />
+
+              {/* 카테고리 필터로 이 분석에서 제외된 "카테고리 미상" 기사 안내(Task 026 팀장
+                  판정) — 필터를 걸었는데 랭킹이 비어 있어도 "필터가 고장났다"로 읽히지 않게 한다. */}
+              {categories.length > 0 && result.uncategorizedCount > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  카테고리 미상 {result.uncategorizedCount}건은 이 분석에서 제외했습니다.
+                </p>
+              )}
 
               {topItems.length > 0 && (
                 <section aria-label="Top 5 핫 키워드">
@@ -271,6 +329,40 @@ function KeywordsPageContent() {
                     pendingKeyword={pendingKeyword}
                   />
                 </>
+              ) : isMessageEmpty ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm text-muted-foreground">키워드 랭킹</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {/* 원본 기사 자체가 0건이다 — 필터를 아무리 만져도 나오지 않으므로
+                        [필터 초기화]·[카테고리 필터 해제] 같은 액션을 주지 않는다. description은
+                        서버가 이미 만들어 보낸 result.message를 그대로 쓴다(CONVENTIONS §7 —
+                        서버가 다듬은 한국어 메시지를 화면이 다시 짓지 않는다). */}
+                    <EmptyState
+                      icon={<Inbox />}
+                      title="수집된 기사가 없습니다"
+                      description={result.message ?? ''}
+                    />
+                  </CardContent>
+                </Card>
+              ) : isCategoryMismatchEmpty ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm text-muted-foreground">키워드 랭킹</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {/* minCount·품사가 원인이 아니라 카테고리 선택이 원인이다 — "필터 초기화"로
+                        같은 문구를 쓰면 사용자가 최소 등장 횟수를 만지느라 헛수고한다. */}
+                    <EmptyState
+                      icon={<SearchX />}
+                      title="선택한 카테고리에 해당하는 기사가 없습니다"
+                      description="이 실행에는 고른 카테고리의 기사가 없습니다. 다른 카테고리를 선택하거나 카테고리 필터를 해제해 보세요."
+                      actionLabel="카테고리 필터 해제"
+                      onAction={handleResetCategoryFilter}
+                    />
+                  </CardContent>
+                </Card>
               ) : (
                 <Card>
                   <CardHeader>

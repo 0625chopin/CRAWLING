@@ -17,6 +17,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -26,7 +33,12 @@ import {
   updatePress,
   type PressSourceWithUrl,
 } from '@/lib/api/press-client'
-import type { PressCreateInput } from '@/lib/types/press'
+import {
+  PRESS_CATEGORY_LABELS,
+  pressCategorySchema,
+  type PressCategory,
+  type PressCreateInput,
+} from '@/lib/types/press'
 
 type SourceType = 'rss' | 'html'
 
@@ -76,6 +88,10 @@ export function PressFormDialog({
 
   const [sourceType, setSourceType] = useState<SourceType>(press?.sourceType ?? 'rss')
   const [name, setName] = useState(press?.name ?? '')
+  // Task 026(저장소 계층)이 category를 필수 출력 타입으로 만들었다 — 화면 카테고리 선택 필드가
+  // 없던 동안 buildPayload()의 두 반환문이 이 필드를 빼먹어 typecheck가 깨졌다
+  // (docs/ISSUES.draft.저장소계층.md). 기본값 'it-ai'는 스키마 기본값과 맞춘다.
+  const [category, setCategory] = useState<PressCategory>(press?.category ?? 'it-ai')
   const [feedUrl, setFeedUrl] = useState(press?.sourceType === 'rss' ? press.feedUrl : '')
   const [collectFullContent, setCollectFullContent] = useState(
     press?.sourceType === 'rss' && Boolean(press.contentSelector)
@@ -158,6 +174,7 @@ export function PressFormDialog({
       return {
         name: name.trim(),
         isActive,
+        category,
         sourceType: 'rss',
         feedUrl: feedUrl.trim(),
         ...(collectFullContent ? { contentSelector: rssContentSelector.trim() } : {}),
@@ -166,6 +183,7 @@ export function PressFormDialog({
     return {
       name: name.trim(),
       isActive,
+      category,
       sourceType: 'html',
       listUrl: listUrl.trim(),
       articleLinkSelector: articleLinkSelector.trim(),
@@ -274,6 +292,27 @@ export function PressFormDialog({
                 ⚠ {fieldErrors.name}
               </p>
             ) : null}
+          </div>
+
+          {/* 카테고리 — Press 1건은 카테고리 1개다(팀장 확정, Task 026). 라벨은 항상
+              PRESS_CATEGORY_LABELS에서 가져온다 — 화면마다 '엔터'/'엔터테인먼트'로 갈리지 않도록. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="press-category">카테고리 *</Label>
+            <Select value={category} onValueChange={(value) => setCategory(value as PressCategory)}>
+              <SelectTrigger id="press-category" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {pressCategorySchema.options.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {PRESS_CATEGORY_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              크롤링 실행·수집 결과·핫 키워드 분석 화면의 카테고리 필터에 쓰입니다.
+            </p>
           </div>
 
           {isRss ? (

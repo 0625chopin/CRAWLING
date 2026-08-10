@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
 
+import { CategoryFilter } from '@/components/common/category-filter'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,6 +22,7 @@ import {
 import { cn } from '@/lib/utils'
 import { fetchRunArticles, type ArticleFileEntry } from '@/lib/api/run-client'
 import { formatLocalTimeOnly } from '@/lib/api/run-format'
+import type { PressCategory } from '@/lib/types/press'
 
 export interface ArticleFileListProps {
   runId: string
@@ -28,6 +30,9 @@ export interface ArticleFileListProps {
   selectedArticleId: string | null
   /** 행 클릭·키보드 선택(Enter/Space) 시 호출된다. */
   onSelectArticleId: (articleId: string) => void
+  /** 카테고리 필터(Task 028). 빈 배열이면 전체 — GET .../articles의 category 쿼리와 같은 규칙. */
+  categories: PressCategory[]
+  onCategoriesChange: (categories: PressCategory[]) => void
 }
 
 type LoadState = 'loading' | 'error' | 'ready'
@@ -51,11 +56,14 @@ export function ArticleFileList({
   runId,
   selectedArticleId,
   onSelectArticleId,
+  categories,
+  onCategoriesChange,
 }: ArticleFileListProps) {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [items, setItems] = useState<ArticleFileEntry[]>([])
+  const [uncategorizedCount, setUncategorizedCount] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [trackedRunId, setTrackedRunId] = useState<string | typeof RUN_UNSET>(RUN_UNSET)
@@ -78,9 +86,11 @@ export function ArticleFileList({
     return () => clearTimeout(timer)
   }, [query])
 
-  // runId·검색어(디바운스 완료분)가 바뀌면(최초 포함) 로딩 상태로 전환한다 — 위와 같은 이유로
-  // 렌더 중 처리하고, 실제 fetch와 그 결과 반영은 아래 effect의 비동기 콜백에서만 한다.
-  const fetchKey = `${runId}::${debouncedQuery}`
+  // runId·검색어(디바운스 완료분)·카테고리 필터가 바뀌면(최초 포함) 로딩 상태로 전환한다 —
+  // 위와 같은 이유로 렌더 중 처리하고, 실제 fetch와 그 결과 반영은 아래 effect의 비동기
+  // 콜백에서만 한다. 카테고리는 순서가 바뀌어도 같은 선택이므로 정렬해 키에 넣는다.
+  const categoryKey = [...categories].sort().join(',')
+  const fetchKey = `${runId}::${debouncedQuery}::${categoryKey}`
   if (fetchKey !== trackedFetchKey) {
     setTrackedFetchKey(fetchKey)
     setLoadState('loading')
@@ -88,10 +98,11 @@ export function ArticleFileList({
 
   useEffect(() => {
     let cancelled = false
-    fetchRunArticles(runId, debouncedQuery)
+    fetchRunArticles(runId, debouncedQuery, categories)
       .then((data) => {
         if (cancelled) return
         setItems(data.items)
+        setUncategorizedCount(data.uncategorizedCount)
         setLoadState('ready')
       })
       .catch((err) => {
@@ -102,7 +113,8 @@ export function ArticleFileList({
     return () => {
       cancelled = true
     }
-  }, [runId, debouncedQuery, reloadToken])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- categories는 categoryKey로 이미 대변된다.
+  }, [runId, debouncedQuery, reloadToken, categoryKey])
 
   // 버튼 클릭(이벤트 핸들러)에서의 setState는 effect 안이 아니므로 그대로 동기 호출해도 된다.
   const retry = () => {
@@ -136,6 +148,27 @@ export function ArticleFileList({
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
+
+        {/* 카테고리 필터(Task 028) — 값이 바뀌면 위 이펙트가 기사 목록을 다시 불러온다. */}
+        <div className="space-y-1.5">
+          <Label htmlFor="article-category-filter" className="text-xs">
+            카테고리
+          </Label>
+          <CategoryFilter
+            id="article-category-filter"
+            value={categories}
+            onValueChange={onCategoriesChange}
+            aria-label="카테고리 필터"
+          />
+        </div>
+
+        {/* 카테고리 필터로 제외된 "카테고리 미상" 기사 안내(Task 026 팀장 판정) — 필터를
+            걸었는데 결과가 0건이어도 "필터가 고장났다"로 읽히지 않도록 이유를 밝힌다. */}
+        {categories.length > 0 && uncategorizedCount > 0 && (
+          <p className="text-xs text-muted-foreground">
+            카테고리 미상 {uncategorizedCount}건은 제외했습니다.
+          </p>
+        )}
 
         {loadState === 'error' && (
           <ErrorAlert

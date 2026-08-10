@@ -2,6 +2,7 @@
 
 import { Play, RefreshCw } from 'lucide-react'
 
+import { CategoryFilter } from '@/components/common/category-filter'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -16,6 +17,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { RunListItem } from '@/lib/api/run-client'
 import type { PosTag } from '@/lib/types/keyword'
+import type { PressCategory } from '@/lib/types/press'
 
 const TOP_N_OPTIONS = [20, 50, 100] as const
 
@@ -29,6 +31,9 @@ export interface AnalysisFilterBarProps {
   onPosFilterChange: (value: PosTag[]) => void
   topN: number
   onTopNChange: (value: number) => void
+  /** 카테고리 필터(Task 028). 빈 배열이면 전체 — 선택한 카테고리 기사만으로 랭킹을 다시 낸다. */
+  categories: PressCategory[]
+  onCategoriesChange: (value: PressCategory[]) => void
   /** [분석 시작]/[재분석] 클릭 — 현재 필터 값으로 조회한다(Kiwi를 다시 돌리지 않는다). */
   onSubmit: () => void
   /** 분석 진행 중에는 값 변경과 제출을 모두 막는다(설계서 §② 분석 진행 중 — "조건 바는 비활성화"). */
@@ -52,6 +57,8 @@ export function AnalysisFilterBar({
   onPosFilterChange,
   topN,
   onTopNChange,
+  categories,
+  onCategoriesChange,
   onSubmit,
   disabled,
   hasResult,
@@ -108,6 +115,17 @@ export function AnalysisFilterBar({
             <ToggleGroupItem value="NNP">NNP</ToggleGroupItem>
             <ToggleGroupItem value="SL">SL</ToggleGroupItem>
           </ToggleGroup>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="category-filter">카테고리</Label>
+          <CategoryFilter
+            id="category-filter"
+            value={categories}
+            onValueChange={onCategoriesChange}
+            disabled={disabled}
+            aria-label="카테고리 필터"
+          />
         </div>
 
         <div className="flex flex-col gap-1.5">

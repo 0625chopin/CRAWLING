@@ -116,6 +116,24 @@ flowchart TD
 | 페이지 헤더(Breadcrumb + h1 + 설명 + 액션) | `<PageHeader>` | `components/common/page-header.tsx` |
 | 빈 상태 | `<EmptyState>` | `components/common/empty-state.tsx` |
 | 오류 | `<ErrorAlert>` | `components/common/error-alert.tsx` |
+| 카테고리 다중 선택 필터(21일차, Task 028) | `<CategoryFilter>` | `components/common/category-filter.tsx` |
+
+**⑤ `<CategoryFilter>`** — `04`(언론사 목록 필터) · `02`(기사 목록 필터) · `03`(분석 필터)이 함께
+쓰는 카테고리(IT/AI·엔터·스포츠·경제·증권) 다중 선택 `ToggleGroup`이다. 라벨은 항상
+`PRESS_CATEGORY_LABELS`(`lib/types/press.ts`, 저장소 계층 소유)에서 가져오고 화면에서 직접
+타이핑하지 않는다. `value`가 빈 배열이면 "전체"라는 뜻이며, 각 API의 `category` 반복 쿼리
+파라미터(미지정 = 전체)와 규칙이 같다.
+
+```ts
+// components/common/category-filter.tsx
+export interface CategoryFilterProps {
+  id?: string
+  value: PressCategory[]
+  onValueChange: (value: PressCategory[]) => void
+  disabled?: boolean
+  'aria-label': string
+}
+```
 
 **① `<PageContainer>`** — `<main className="flex-1">`와 `container mx-auto max-w-6xl px-4 py-6 md:py-8`를 이 컴포넌트가 함께 제공합니다.
 **화면 문서 스켈레톤에서 같은 클래스를 직접 쓴 `<div>`를 그리지 않습니다.** 직접 그리면 `<main className="flex-1">`가 빠지기 쉽고,

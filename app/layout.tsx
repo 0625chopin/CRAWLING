@@ -18,9 +18,9 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'IT/AI 뉴스 핫 키워드 크롤러',
+  title: '뉴스 핫 키워드 크롤러',
   description:
-    '선택한 언론사에서 IT/AI 기사를 수집하고 형태소 분석으로 핫 키워드를 뽑아내는 도구',
+    '선택한 언론사에서 IT/AI·엔터·스포츠·경제·증권 기사를 수집하고 형태소 분석으로 핫 키워드를 뽑아내는 도구',
 }
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {

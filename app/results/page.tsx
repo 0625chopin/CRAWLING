@@ -18,6 +18,7 @@ import {
   type RunListItem,
   type RunSummary,
 } from '@/lib/api/run-client'
+import type { PressCategory } from '@/lib/types/press'
 
 type RunsLoadState = 'loading' | 'error' | 'ready'
 
@@ -44,6 +45,10 @@ export default function CollectResultPage() {
   const handleSelectArticleId = useCallback((articleId: string) => {
     setSelectedArticleId(articleId)
   }, [])
+  // 카테고리 필터(Task 028). article-file-list.tsx와 run-summary-card.tsx가 공유해야 하는
+  // 값이라(목록을 좁히는 동시에 요약 카드에 "지금 보는 범위"를 보여준다) 이 페이지가 쥔다 —
+  // selectedArticleId와 같은 이유(D-006 패턴).
+  const [categories, setCategories] = useState<PressCategory[]>([])
 
   useEffect(() => {
     fetchRuns()
@@ -70,6 +75,7 @@ export default function CollectResultPage() {
     setSummary(null)
     setSummaryError(null)
     setSelectedArticleId(null)
+    setCategories([])
   }
 
   useEffect(() => {
@@ -137,19 +143,22 @@ export default function CollectResultPage() {
           {/* ③ 실행 요약 카드 — 실행 전환 중에는 스켈레톤으로 대체한다. */}
           {summaryError && <ErrorAlert description={summaryError} />}
           {summary ? (
-            <RunSummaryCard summary={summary} />
+            <RunSummaryCard summary={summary} categories={categories} />
           ) : (
             !summaryError && <Skeleton className="h-32 w-full" />
           )}
 
           {/* ④⑤ 기사 파일 목록 + 본문 미리보기 — 018B의 정적 뼈대를 호출한다(D-011,
               components/results/{article-file-list,article-preview}.tsx). 선택 상태
-              (selectedArticleId)는 두 컴포넌트가 공유해야 하므로 이 페이지가 쥐고 내려준다. */}
+              (selectedArticleId)와 카테고리 필터(Task 028)는 두 컴포넌트/요약 카드가 공유해야
+              하므로 이 페이지가 쥐고 내려준다. */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr] lg:items-start">
             <ArticleFileList
               runId={selectedRunId}
               selectedArticleId={selectedArticleId}
               onSelectArticleId={handleSelectArticleId}
+              categories={categories}
+              onCategoriesChange={setCategories}
             />
             <ArticlePreview runId={selectedRunId} articleId={selectedArticleId} />
           </div>

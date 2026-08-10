@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { SourceTypeBadge } from '@/components/press/source-type-badge'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -16,6 +17,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { updatePressActive, type PressSourceWithUrl } from '@/lib/api/press-client'
+import { PRESS_CATEGORY_LABELS } from '@/lib/types/press'
 
 export interface PressTableProps {
   pressList: PressSourceWithUrl[]
@@ -87,6 +89,8 @@ export function PressTable({
                     <div className="flex items-center gap-2">
                       {press.name}
                       <SourceTypeBadge sourceType={press.sourceType} />
+                      {/* 라벨은 항상 PRESS_CATEGORY_LABELS에서 가져온다(카테고리별 색은 지어내지 않는다). */}
+                      <Badge variant="outline">{PRESS_CATEGORY_LABELS[press.category]}</Badge>
                     </div>
                   </TableCell>
                   <TableCell

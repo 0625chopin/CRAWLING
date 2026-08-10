@@ -16,6 +16,7 @@ import { Separator } from '@/components/ui/separator'
 import { useCrawlProgress } from '@/hooks/use-crawl-progress'
 import { abortCrawl } from '@/lib/api/crawl-client'
 import type { RunProgress } from '@/lib/types/crawl-run'
+import { PRESS_CATEGORY_LABELS, type PressCategory } from '@/lib/types/press'
 
 export interface CrawlRunPanelProps {
   /** 실행 중이면 진행 상태 폴링 대상이 되는 id. 아직 시작 전이면 null. */
@@ -38,6 +39,11 @@ export interface CrawlRunPanelProps {
    * (D-006 — 이 회차는 app/page.tsx를 재구조화하지 않는다).
    */
   onReset: () => void
+  /**
+   * pressId → 카테고리 조회용 맵(Task 028). RunProgress에는 카테고리가 없어(크롤 파이프라인
+   * 소유 스키마, 이 회차 범위 밖) app/page.tsx가 이미 들고 있는 pressList에서 만들어 내려준다.
+   */
+  categoryByPressId: ReadonlyMap<string, PressCategory>
 }
 
 const TERMINAL_TOAST_STATUSES = new Set<RunProgress['status']>([
@@ -64,6 +70,7 @@ export function CrawlRunPanel({
   onMaxArticlesPerPressChange,
   onStart,
   onReset,
+  categoryByPressId,
 }: CrawlRunPanelProps) {
   const canStart = !isRunning && !isStarting && !isPressEmpty && selectedCount > 0
   const { progress, error: progressError } = useCrawlProgress(runId)
@@ -148,9 +155,19 @@ export function CrawlRunPanel({
             {progressError && <p className="text-xs text-muted-foreground">{progressError}</p>}
           </div>
         ) : progress.status === 'running' ? (
-          <RunningPanel progress={progress} isAborting={isAborting} onAbort={handleAbort} />
+          <RunningPanel
+            progress={progress}
+            isAborting={isAborting}
+            onAbort={handleAbort}
+            categoryByPressId={categoryByPressId}
+          />
         ) : (
-          <DonePanel runId={runId} progress={progress} onReset={onReset} />
+          <DonePanel
+            runId={runId}
+            progress={progress}
+            onReset={onReset}
+            categoryByPressId={categoryByPressId}
+          />
         )}
       </CardContent>
     </Card>
@@ -162,11 +179,18 @@ function RunningPanel({
   progress,
   isAborting,
   onAbort,
+  categoryByPressId,
 }: {
   progress: RunProgress
   isAborting: boolean
   onAbort: () => void
+  categoryByPressId: ReadonlyMap<string, PressCategory>
 }) {
+  // pressStatuses에는 pressId가 있지만 progress.currentPressName은 이름뿐이라, 지금 진행 중인
+  // 항목(status: 'running')을 찾아 그 pressId로 카테고리를 조회한다(Task 028).
+  const runningItem = progress.pressStatuses.find((item) => item.status === 'running')
+  const currentCategory = runningItem ? categoryByPressId.get(runningItem.pressId) : undefined
+
   return (
     <div role="status" aria-live="polite" className="space-y-3">
       <div className="flex items-center justify-between text-sm">
@@ -176,13 +200,19 @@ function RunningPanel({
       <Progress value={progress.overallPercent} className="h-2" />
       <p className="text-sm text-muted-foreground">
         {progress.currentPressName
-          ? `현재: ${progress.currentPressName} — ${progress.currentCollected}/${progress.currentTarget}건`
+          ? `현재: ${progress.currentPressName}${
+              currentCategory ? ` · ${PRESS_CATEGORY_LABELS[currentCategory]}` : ''
+            } — ${progress.currentCollected}/${progress.currentTarget}건`
           : '다음 언론사를 준비하는 중입니다'}
       </p>
 
       <Separator />
 
-      <PressRunStatusList pressStatuses={progress.pressStatuses} recovered={progress.recovered} />
+      <PressRunStatusList
+        pressStatuses={progress.pressStatuses}
+        recovered={progress.recovered}
+        categoryByPressId={categoryByPressId}
+      />
 
       <Button
         type="button"
@@ -210,10 +240,12 @@ function DonePanel({
   runId,
   progress,
   onReset,
+  categoryByPressId,
 }: {
   runId: string
   progress: RunProgress
   onReset: () => void
+  categoryByPressId: ReadonlyMap<string, PressCategory>
 }) {
   const { status, pressStatuses, successCount, failCount, skippedCount } = progress
   const isAborted = status === 'aborted'
@@ -294,7 +326,11 @@ function DonePanel({
       {(hasFailures || isAborted) && (
         <>
           <Separator />
-          <PressRunStatusList pressStatuses={pressStatuses} recovered={progress.recovered} />
+          <PressRunStatusList
+            pressStatuses={pressStatuses}
+            recovered={progress.recovered}
+            categoryByPressId={categoryByPressId}
+          />
         </>
       )}
 

@@ -42,11 +42,11 @@
 | **Phase 0** | 완료된 기반 (프로젝트 골격·앱 셸·Kiwi 검증) | 3 (001–003) | 3 | ✅ 완료 |
 | **Phase 1** | 도메인 타입 + 파일 저장소 계층 | 4 (004–007) | 4 | ✅ 완료 |
 | **Phase 2** | 언론사·불용어 레지스트리 (API + 화면) `F007` `F008` | 5 (008–012) | 5 | ✅ 완료 |
-| **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 1 | 🟡 진행 중 |
+| **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 2 | 🟡 진행 중 |
 | **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 0 | ⬜ 대기 |
 | **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 2 | 🟡 진행 중 |
 | **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 0 | ⬜ 대기 |
-| **합계** | | **25** | **15** | **60%** |
+| **합계** | | **25** | **16** | **64%** |
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -458,8 +458,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 014 · 실행 잡 관리자 (백그라운드 실행 · 진행 상태 · 중단)
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F002` `F003` &nbsp;|&nbsp; 선행: Task 013
-- **진행 메모**: 014A(잡 레지스트리·백그라운드 실행 `lib/crawler/run-manager.ts`) 완료(7일차). 조각 014B(진행 상태 복구·중단·중복 실행 차단)가 남아 이 블록은 체크하지 않는다. DoD 5개 중 1~3번 충족, 4~5번(중단 후 `aborted` · 서버 재시작 시 중단 표시)은 014B로 이월했다(`docs/DECISIONS.md` D-016). `failReason`은 014A가 정형 라벨로 다듬는다(D-017), 언론사 레벨 동시성은 `pressConcurrency`로 제한한다(D-015).
+- [x] 완료 (8일차, 2026-08-10) &nbsp;|&nbsp; 기능 ID: `F002` `F003` &nbsp;|&nbsp; 선행: Task 013
+- **결과물**: `lib/crawler/run-manager.ts`(`startRun`·`getRunProgress`·`abortRun` + `globalThis` 잡 레지스트리) · `lib/types/crawl-run.ts`(`RunProgress`·`PressRunStatus`·`recovered`) · `lib/crawler/press-crawler.ts`(중단 훅 `isAborted` — 파일 목록 밖이지만 D-016이 014B 몫으로 명시한 "크롤 루프가 실제로 멈추는 것"의 실체가 여기 있다, D-019) · `lib/storage/run-repository.ts`(`RunNotFoundError`) · `lib/crawler/index.ts` · 회귀 `run-manager.test.ts`·`press-crawler.test.ts`
+- **남긴 한계**: DoD ④⑤ 검증은 **mock 기반이다.** 실제 크롤을 걸고 [중단]을 누르는 라이브 확인은 실행 API(015A)가 없어 못 했다 — 015A 완료 회차에 Playwright MCP로 함께 태운다. 서버 재시작 복구 시 언론사별 상태는 메모리 전용 값이라 재구성할 수 없어 "기사를 하나라도 저장했으면 `done`"으로 근사하고, 그 사실을 `recovered` 플래그로 화면에 알린다(D-023). 예외는 문자열이 아니라 전용 클래스로 구분한다(D-022, I-016).
 - **참조**: `docs/screens/01-crawl-run.md` §상태별 화면 ③④⑤, `docs/PRD.md` §F002
 - **생성/수정 파일**
   - `lib/crawler/run-manager.ts` (신규) — `startRun(input)` / `getRunProgress(runId)` / `abortRun(runId)` / **`globalThis`에 붙인 잡 레지스트리**
@@ -486,6 +487,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 ### Task 015 · 크롤 실행 API 및 진행 상태 전송
 
 - [ ] 대기 &nbsp;|&nbsp; 기능 ID: `F001` `F002` &nbsp;|&nbsp; 선행: Task 014
+- **진행 메모**: 015B(진행 상태 폴링 라우트 `app/api/crawl/[runId]/route.ts` GET · 훅 `hooks/use-crawl-progress.ts`) 완료(8일차). 조각 015A(`POST /api/crawl` 전면 교체 · 중단 라우트)가 남아 이 블록은 체크하지 않는다. DoD 5개 중 015B 몫은 폴링 흐름과 종료 후 중단이고, ①③④는 015A 몫이다. 폴링은 오류 응답에도 멈추지 않고 종료 상태에서만 멈춘다(D-024). 예외 → 상태 코드 매핑은 전용 클래스로 한다(D-022).
 - **참조**: `docs/screens/01-crawl-run.md`, `app/api/crawl/route.ts`(현행)
 - **생성/수정 파일**
   - `app/api/crawl/route.ts` (**전면 교체**) — `POST { pressIds, maxArticlesPerPress }` → `202 { runId }`

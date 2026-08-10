@@ -42,4 +42,9 @@ export {
   type PressCrawlOptions,
   type PressCrawlResult,
 } from './press-crawler'
-export { startRun, getRunProgress, abortRun } from './run-manager'
+export { startRun, getRunProgress, abortRun, RunAlreadyRunningError, RunNotAbortableError } from './run-manager'
+// RunNotFoundError는 lib/storage/run-repository.ts(Task 007)가 던지는 곳이지만, getRunProgress·
+// abortRun을 호출하는 라우트(015A·015B)가 run 생명주기 관련 예외 3종(RunAlreadyRunningError·
+// RunNotAbortableError·RunNotFoundError)을 한 곳에서 import할 수 있도록 여기서도 재수출한다 —
+// lib/crawler가 lib/storage를 가져오는 기존 방향 그대로다(8일차 교차검증 후속).
+export { RunNotFoundError } from '@/lib/storage/run-repository'

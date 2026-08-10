@@ -7,6 +7,20 @@ import { crawlRunSchema, type CrawlRun, type CrawlRunStatus } from '@/lib/types/
 import { ensureDir, writeJson } from './json-store'
 import { articlesDir, runDir, runMetaPath, runsRootDir } from './paths'
 
+/**
+ * 존재하지 않는 runId를 나타내는 전용 타입. `readRunMeta`가 유일한 발생지다. 이전에는 같은
+ * 문구("실행을 찾을 수 없습니다: ...")를 가진 평범한 `Error`였는데, 소비자(`app/api/crawl/[runId]/
+ * route.ts`)가 `error.message.startsWith(...)`로 404를 판정하고 있어 문구를 다듬는 순간 조용히
+ * 500으로 바뀌는 위험이 있었다(8일차 교차검증 후속). 문구는 화면이 그대로 노출하므로 바꾸지
+ * 않았다 — 판정 수단만 타입으로 옮긴다.
+ */
+export class RunNotFoundError extends Error {
+  constructor(public readonly runId: string) {
+    super(`실행을 찾을 수 없습니다: ${runId}`)
+    this.name = 'RunNotFoundError'
+  }
+}
+
 function isNotFoundError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT'
 }
@@ -57,7 +71,7 @@ async function readRunMeta(runId: string): Promise<CrawlRun> {
     raw = await fs.readFile(runMetaPath(runId), 'utf-8')
   } catch (error) {
     if (isNotFoundError(error)) {
-      throw new Error(`실행을 찾을 수 없습니다: ${runId}`)
+      throw new RunNotFoundError(runId)
     }
     throw error
   }

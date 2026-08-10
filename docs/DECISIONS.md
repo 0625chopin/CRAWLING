@@ -409,3 +409,138 @@ work 문서는 014A(잡 레지스트리·백그라운드 실행)와 014B(진행 
 **Task 025로 이어지는 이유**: Task 025의 DoD가 `browser_console_messages` 에러 0건을 요구하는데, 그
 여정에는 언론사 삭제·크롤 실패 등 의도적 실패가 반드시 포함된다. 이 결정이 없으면 그 회차 담당이
 처음부터 다시 판단하거나 정상 동작을 결함으로 잡는다.
+
+### D-019 · Task 014B는 `lib/crawler/press-crawler.ts`(013B 산출물)에 중단 훅을 추가한다
+
+- 결정: 8일차 · 크롤 파이프라인(Task 014B)
+- 영향 Task: Task 014B(반영) · Task 013B(수정 대상)
+
+**배경**: ROADMAP Task 014의 「생성/수정 파일」은 `lib/crawler/run-manager.ts`·`lib/types/crawl-run.ts`
+둘뿐이다. 그런데 D-016은 014B의 몫을 "**크롤 루프가** 그 값을 읽어 실제로 멈추는 것"이라고 못 박았고,
+그 크롤 루프(`collectArticlePages`)는 `run-manager.ts`가 아니라 `press-crawler.ts`에 있다.
+
+**결정**: `PressCrawlHooks`에 `isAborted?: () => boolean`을 추가하고, `collectArticlePages`가 다음 링크를
+처리하기 직전(아직 `fetchHtml`을 부르기 전)에 이 값을 읽어 true면 요청 없이 실패로 접는다. 이미 시작된
+요청은 손대지 않는다 — "진행 중 페이지를 강제로 죽이지 않는다"는 구현 규칙과 같은 경계다.
+
+**기각한 대안**: `run-manager.ts`만 고쳐 언론사 단위로만 중단을 반영한다 — 언론사 1곳이 기사 수십 건을
+가지면 [중단]을 눌러도 그 언론사가 끝날 때까지 수 분간 요청이 계속 나간다. 화면 설계서 01의 [중단] 버튼
+기대와 어긋난다.
+
+**곁가지로 잡은 버그**: `crawlRssPress`(RSS 본문 전문 경로)의 `offsetHooks`가 `onArticleDone`만 옮기고
+`isAborted`를 빠뜨리고 있었다. 고치지 않았으면 **RSS 전문 경로에서만 중단이 안 먹는데 HTML 경로 테스트는
+통과하는** 상태로 남았을 것이다. 화면이 교차검증에서 두 경로 모두 훅이 걸렸는지 직접 확인했다.
+
+### D-020 · `getRunProgress`·`abortRun`은 `Promise`를 반환한다
+
+- 결정: 8일차 · 크롤 파이프라인(Task 014B)
+- 영향 Task: Task 015A · Task 015B
+
+**배경**: DoD ⑤("서버 재시작 시 고아 run을 조회 시점에 `aborted`로 간주")를 만족하려면 레지스트리에 없는
+runId를 `run-repository.getRun`(fs 읽기, 비동기)으로 복구해야 한다. 014A의 원형은 레지스트리 Map 조회만
+했으므로 둘 다 동기였다.
+
+**결정**: 두 함수 모두 `Promise` 반환으로 바꾼다. 라우트 핸들러는 이미 비동기라 `await`만 붙이면 되고
+별도 어댑터는 필요 없다. 015B가 이 계약대로 GET 라우트를 만들었고 `typecheck`·`build`로 확인됐다.
+
+### D-021 · `RunAlreadyRunningError`로 409 신호를 올린다
+
+- 결정: 8일차 · 크롤 파이프라인(Task 014B)
+- 영향 Task: Task 015A
+
+**배경**: "이미 `running`인 run이 있으면 409로 거절한다"는 HTTP 상태 코드인데 `run-manager.ts`는 HTTP를
+모르는 lib 계층이고, `withErrorBoundary`는 모든 예외를 500으로 뭉갠다(D-008).
+
+**결정**: `class RunAlreadyRunningError extends Error`를 만들어 `startRun`이 이 타입으로 던진다. 015A가
+`instanceof`로 확인해 `fail(message, 409)`로 매핑한다.
+
+**남은 판단**: 이 검사는 **이 프로세스의 메모리 레지스트리만** 본다. 죽은 프로세스가 남긴 `run-meta.json`상의
+`running` 고아는 걸리지 않고 조회·중단 시점에 `aborted`로 정리된다. 로컬 1인 도구에서 죽은 고아는 더 이상
+아무 작업도 하지 않으므로 실질적 자원 경합이 없다 — `startRun`이 `listRuns()`로 디스크 전체를 스캔하는
+것은 과설계로 보고 하지 않았다.
+
+### D-022 · run 생명주기 예외 3종을 전용 클래스로 올리고 `@/lib/crawler` 배럴에서 재수출한다
+
+- 결정: 8일차 · 팀장(교차검증 후속) · 선언 위치와 클래스명은 크롤 파이프라인 판단
+- 영향 Task: Task 014B · Task 015B(반영) · **Task 015A(9일차 — 이 계약 위에 만든다)**
+
+**배경**: I-016. 문자열 접두사로 404를 판정하던 구조는 문구를 다듬는 순간 조용히 500이 되고 모든 검사가
+통과한다. 9일차 015A가 `abortRun`의 두 예외를 또 문자열로 갈라야 하는 상황이라, **그 위에 쌓기 전에**
+계약을 바꾸기로 했다.
+
+**결정**:
+- `RunNotFoundError`는 발생지인 `lib/storage/run-repository.ts`(Task 007)에 선언하고 `readRunMeta`의
+  ENOENT 분기가 던진다. `RunNotAbortableError`는 `abortRun`이 던지는 두 지점이 모두
+  `lib/crawler/run-manager.ts` 안이라 `RunAlreadyRunningError`와 나란히 둔다.
+- `lib/crawler/index.ts`가 셋을 한 곳에서 재수출한다 — 015A·015B가 run 생명주기 예외를 `@/lib/crawler`
+  하나에서 가져오게 하려는 것이다. `lib/crawler`가 `lib/storage`를 가져오는 기존 방향은 유지한다.
+- **한국어 메시지 문구는 한 글자도 바꾸지 않는다.** 화면이 `.message`를 그대로 사용자에게 보여주므로
+  바꾸는 것은 타입뿐이다.
+
+**015A가 쓸 매핑**: `RunAlreadyRunningError` → 409. `RunNotFoundError` → 404. `RunNotAbortableError` →
+409 또는 400(015A 판단). 셋 다 `.message`가 그대로 노출 가능한 한국어다.
+
+### D-023 · 디스크에서 복구한 `RunProgress`에는 `recovered` 플래그를 붙인다
+
+- 결정: 8일차 · 팀장(교차검증 후속)
+- 영향 Task: Task 014B(반영) · **Task 016A · Task 016B(이 플래그로 표현을 가른다)**
+
+**배경**: 화면이 014B 리뷰에서 짚은 회색지대다. `recoverRunProgress`는 `pressStatuses[].target`을 실제
+목표치가 아니라 `collected`와 같은 값으로 채운다(원래 목표는 메모리에만 있어 복구 불가). 화면이 그대로
+그리면 **원래 20건 목표였다가 5건에서 끊긴 언론사가 "5/5건 · 완료"로** 보인다. 실행 전체 status는
+`aborted`로 정확하지만 언론사별 줄은 "정상적으로 다 끝났다"고 말한다 — **모르는 값을 확정치처럼 보여주는
+것**이라 받아들이지 않는다.
+
+**결정**: `RunProgress`에 **선택적** `recovered?: boolean`을 더한다. 정상(레지스트리 적중) 경로는 필드를
+아예 붙이지 않고, 디스크 복구 경로 두 갈래(고아 running→aborted 확정 / 이미 끝난 run 반환) 모두 `true`다.
+016A·016B는 이 값이 `true`면 언론사별 수치가 근사값임을 표현에 반영한다.
+
+**기각한 대안**: `target`을 `null`로 바꾼다 — 더 정직하지만 `RunProgress`를 이미 015B가 소비 중이고
+016A·016B가 곧 붙는데, 필수 수치 필드를 nullable로 바꾸면 소비처 전부가 분기를 떠안는다. 플래그 하나로
+화면이 표현을 고르게 하는 쪽이 비용이 낮다.
+
+**회귀**: 복구 경로에서 `true`, 정상 경로에서 `undefined`를 **각각** 단언하는 케이스를 남겼다 — 한쪽만
+두면 "항상 `true`"인 버그가 통과한다.
+
+### D-024 · `use-crawl-progress` 훅은 오류 응답을 받아도 폴링을 멈추지 않는다
+
+- 결정: 8일차 · 화면(Task 015B)
+- 영향 Task: Task 015B(반영) · Task 016A(재검토 여지)
+
+**배경**: DoD와 화면 설계서 01은 "종료 상태(`done`/`partial-failed`/`failed`/`aborted`)에서 멈춘다"만
+못 박았다. 404·500이나 `fetch` 자체 실패는 명시가 없다.
+
+**결정**: 오류 응답을 받아도 다음 1초 타이머를 계속 건다 — `status`가 종료 상태일 때만 멈춘다. 오류
+메시지는 노출하고 다음 성공 응답에서 지운다.
+
+**근거**: `next dev`의 HMR·서버 재시작이 잦은 로컬 1인 도구라, 일시적 실패로 폴링을 영구 정지시키면
+서버가 회복돼도 화면이 스스로 복구할 방법이 없다. 반대로 없는 runId에 영원히 재시도하는 비용은 초당 1회
+로컬 요청이라 무시할 수 있고, 016A는 `POST /api/crawl`이 돌려준 runId만 이 훅에 넘긴다.
+
+**남은 판단**: 저장소 계층이 교차검증에서 "연속 N회 오류 시 중단" 상한을 방어적으로 두자고 제안했다
+(블로킹 아님). 016A가 훅을 실제 화면에 붙일 때 다시 연다.
+
+### D-025 · Task 017의 서버 조립 표시 문자열은 순수 함수로 분리한다
+
+- 결정: 8일차 · 저장소 계층(유휴 배정) · **위치는 017 담당자 판단으로 열어 둔다**
+- 영향 Task: Task 017(10일차 착수)
+
+**배경**: `GET /api/runs`의 `label`(`2026-08-10 14:32 · 언론사 3 · 성공 42 · 실패 2`)과
+`GET /api/runs/{runId}`의 `durationLabel`(`6분 36초`)은 둘 다 ISO 시각을 한국어 표시 문구로 조립하는 같은
+종류의 로직이고, ROADMAP이 **서버 조립**을 명시했다.
+
+**결정**: 두 라우트에 인라인으로 각각 짜지 않고 순수 함수로 뽑아 재사용한다. 근거는 ① 순수 함수여야
+`docs/CONVENTIONS.md` §9의 회귀 테스트 대상이 되는데, 날짜 포맷은 **틀려도 화면이 멀쩡해 보이는** 전형적인
+종류다. ② 같은 `startedAt`/`finishedAt`을 두 곳에서 포맷하므로 인라인이면 나중에 한쪽만 고쳐진다.
+
+**열어 둔 것**: 파일 위치. `lib/api/`는 클라이언트도 import하는 디렉터리(§2)라 서버 전용 포맷 로직을 거기
+두는 게 맞는지, 아니면 라우트 전용 헬퍼로 둘지는 017 담당자가 정한다.
+
+**함께 참고할 것(교차검증에서 추가로 나온 것)**: `ArticleListEntry.pressName`을 채우려고 기사마다
+`getPress(pressId)`를 부르면 N+1이 된다 — `getPress`는 호출마다 `press-sources.json` 전체를 다시 읽는다
+(`lib/storage/press-repository.ts:79-82`, 캐싱 없음). `listPress()`를 한 번 불러 `Map<id, PressSource>`로
+재사용하는 편이 낫다. 1초 DoD를 못 지킬 정도는 아니라 이슈로 올리지 않고 여기 참고로 남긴다.
+
+**시각 필드 경계 판정**: `startedAt`/`finishedAt`은 ISO로 그대로 내리고 `label`·`durationLabel`만 서버가
+조립하는 초안의 경계는 옳다 — 데스크톱 와이어프레임은 `14:32:05 → 14:38:41`, 모바일은 `14:32 → 14:38`로
+**포맷 자체가 다르다.** 반응형에 따라 갈리는 필드까지 서버가 한 문자열로 구우면 한쪽이 깨진다.

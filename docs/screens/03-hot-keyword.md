@@ -335,14 +335,10 @@ Kiwi 모델 로딩은 첫 실행 시 수 초가 걸릴 수 있고 토큰화·집
 
 ## 사용 컴포넌트
 
-### 이미 설치됨 (추가 설치 불필요)
-`alert` `badge` `breadcrumb` `button` `card` `input` `navigation-menu` `skeleton` `sonner` `table`
+### 설치 완료 (추가 설치 불필요 — `docs/screens/README.md` §화면별 사용 shadcn 컴포넌트가 설치 상태의 단일 소스)
+`alert` `badge` `breadcrumb` `button` `card` `input` `label` `navigation-menu` `select` `skeleton` `sonner` `table` `toggle-group`
 
-### 추가 설치 필요
-
-```bash
-npx shadcn@latest add select toggle-group label
-```
+이 화면이 새로 쓰는 3종의 용도는 아래와 같다.
 
 | 컴포넌트 | 이 화면에서의 용도 |
 |----------|--------------------|
@@ -350,6 +346,8 @@ npx shadcn@latest add select toggle-group label
 | `toggle-group` | 품사 필터(NNG/NNP/SL) 다중 토글 |
 | `label` | `Input`(최소 등장 횟수) · `Select`와 접근성 있게 연결되는 폼 레이블 |
 | `empty` | `EmptyState`(`components/common/empty-state.tsx`)가 내부에서 쓴다. 00 셸 설치 목록에 이미 있다 |
+
+> (19일차: 크롤 파이프라인이 설계서 전수 검토 중 발견해, 화면이 I-010과 같은 방식으로 처리했다. `select`·`toggle-group`·`label` 모두 `components/ui/`에 실물이 있고 `docs/screens/README.md`가 이미 이 셋을 03의 설치 완료 목록에 넣어 두어 "추가 설치 필요" 절과 설치 명령이 중복·오류였다. 절을 지우지 않고 "설치 완료" 목록에 합쳤다.)
 
 `slider`, `tabs`, `tooltip`, `chart`, `dialog`는 이 화면에서 쓰지 않는다 — 근거는 "설계 결정과 근거" 절 참고(슬라이더 대신 숫자 입력, 차트 라이브러리 대신 Tailwind 미니 막대, 수치가 항상 텍스트로 병기되어 호버 툴팁이 필수가 아님).
 

@@ -289,14 +289,10 @@ PRD와 팀 지시사항이 열어둔 판단 지점을 아래와 같이 결정했
 
 ## 사용 컴포넌트
 
-**설치됨 — 추가 설치 없이 사용**
-`alert` `badge` `breadcrumb` `button` `card` `input` `skeleton` `sonner`(전역 토스트, `00-app-shell.md`에서 이미 마운트됨)
+**설치 완료 — 추가 설치 없이 사용** (`docs/screens/README.md` §화면별 사용 shadcn 컴포넌트가 설치 상태의 단일 소스)
+`alert` `alert-dialog` `badge` `breadcrumb` `button` `card` `input` `label` `skeleton` `sonner`(전역 토스트, `00-app-shell.md`에서 이미 마운트됨) `textarea`
 
-**추가 설치 필요**
-
-```
-npx shadcn@latest add label textarea alert-dialog
-```
+이 화면이 새로 쓰는 3종의 용도는 아래와 같다.
 
 | 컴포넌트 | 용도 |
 |---------|------|
@@ -304,6 +300,8 @@ npx shadcn@latest add label textarea alert-dialog
 | `textarea` | 일괄 추가 패널의 다중 단어 입력 |
 | `alert-dialog` | 기본 프리셋 삭제 확인 |
 | `empty` | `EmptyState`가 내부에서 쓴다. 00 셸 설치 목록에 이미 있어 이 화면에서 따로 설치하지 않는다 |
+
+> (19일차: 크롤 파이프라인이 설계서 전수 검토 중 발견해, 화면이 I-010과 같은 방식으로 처리했다. `label`·`textarea`·`alert-dialog` 모두 `components/ui/`에 실물이 있고 `docs/screens/README.md`가 이미 이 셋을 05의 설치 완료 목록에 넣어 두어 "추가 설치 필요" 절과 설치 명령이 중복·오류였다. 절을 지우지 않고 "설치 완료" 목록에 합쳤다.)
 
 **lucide 아이콘**
 `X`(칩 삭제) · `Search`(검색 입력) · `SearchX`(검색 결과 없음 `EmptyState` 아이콘) · `Ban`(사용자 추가 0건 `EmptyState` 아이콘) · `ListPlus`(일괄 추가 토글) · `Lock`(기본 프리셋 표시) · `RefreshCw`(재분석 CTA) · `TriangleAlert`(삭제 확인 다이얼로그 제목) · `CircleAlert`(중복 입력 Alert)

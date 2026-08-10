@@ -1,7 +1,6 @@
 export { crawlerConfig } from './config'
 export { getBrowser, closeBrowser } from './browser'
 export { fetchHtml } from './fetch-html'
-export { runCrawl, type RunCrawlOptions } from './run'
 export {
   loadDocument,
   selectText,
@@ -13,10 +12,8 @@ export {
 } from './parse'
 export {
   crawlTargetSchema,
-  crawlRequestSchema,
   type CrawlTarget,
   type ResolvedCrawlTarget,
-  type CrawlRequest,
   type CrawlResult,
   type CrawlSuccess,
   type CrawlFailure,

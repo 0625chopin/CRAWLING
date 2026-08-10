@@ -721,3 +721,54 @@ Task 007 파일을 고치지 않고 우회하는 방식이라 영역 경계는 �
 **규칙으로 굳힌다**: **불용어를 건드린 검증은 "불용어 삭제"까지가 아니라 "삭제 + `?force=true` 재분석으로
 기준값 복원 확인"까지가 원복이다.** 캐시는 불용어 변경을 자동으로 따라오지 않는다(D-036·Task 021의
 캐시 경계 설계상 의도된 동작이다).
+
+### I-031 · `kiwi-check` 삭제로 `userWords` 결합을 태워 확인할 수단이 사라졌다
+
+- 상태: 열림 (**삭제를 막지 않는다** · Q1이 다시 열릴 때 참조할 기록)
+- 발견: 14일차 · 저장소 계층(Task 023 삭제 범위 독립 검증) → 크롤 파이프라인(등재)
+- 관련 Task: Task 023(삭제 실행) · Task 019(`kiwi.ts`) · 관련 결정: **Q1**(사용자 사전 도입 여부)
+
+**증상**: 삭제된 `app/api/kiwi-check/route.ts`는 `userWords`에 `오픈AI`·`온디바이스`·`데이터센터` 3종을
+넣고 `build()`한 뒤 tokenize 결과에서 실제로 **한 토큰(`NNP`)으로 합쳐지는지** 확인하던 유일한 수단이었다.
+정식 구현인 `lib/keyword/kiwi.ts:94`의 `buildKiwi()`는 Q1 결정대로 `userWords: []`로 비워 두므로, 삭제
+시점에 이 경로를 대체하는 코드가 없다.
+
+**그래도 지금 지우는 것이 맞다**: 현재 `lib/keyword/`가 `userWords`를 전혀 쓰지 않으므로(빈 배열 고정)
+**검증할 대상 자체가 없다.** 기능 손실이 아니라 훗날 쓸 진단 도구가 사라지는 것이다. 모델 경로 확인·
+`build()` 성공 여부·`MATCH_OPTIONS`는 `lib/keyword/kiwi.ts`가 전부 대체한다(저장소 계층이 대조 확인).
+
+**핵심은 비대칭이다** — **자리는 열려 있는데 확인 수단만 없어진다.** Q1은 "Task 019에서 `build()`의
+`userWords` 인자 자리를 열어두고 빈 배열을 넘긴다. 나중에 도입할 때 바뀌는 파일이 `lib/keyword/kiwi.ts`
+하나로 제한된다"고 적어 뒀다. 자리는 설계상 확보돼 있으나 그 자리를 채운 뒤 **결과가 맞는지 태워 볼
+경로**가 없다.
+
+**Q1이 다시 열리면 필요한 것**: ① 모델 경로(`data/kiwi-model/` 9파일)가 실제로 읽히는지 ②
+`build({ modelFiles, userWords })`가 성공하는지 ③ `userWords`에 넣은 고유명사가 tokenize 결과에서 한
+토큰(`NNP`)으로 합쳐지는지. 이 세 단계를 태우는 임시 진단 경로를 다시 만들어야 한다.
+
+**참고**: `docs/kiwi-verification.md` §4 §7 · `docs/ROADMAP.md` §결정 필요 사항 Q1 · `lib/keyword/kiwi.ts:94`.
+
+### I-032 · `CRAWL_PRESS_CONCURRENCY`가 `.env.example`에서 빠져 있다
+
+- 상태: 열림 (**Task 024가 15일차에 반영한다**)
+- 발견: 14일차 · 화면(024 사전 조사 · 환경변수 전수 대조)
+- 관련 Task: **Task 024**(반영) · Task 014A(7일차 도입) · 관련 결정: **D-015**
+
+**증상**: `lib/crawler/config.ts:18`이 `readInt(process.env.CRAWL_PRESS_CONCURRENCY, 3)`으로 읽는 변수인데
+`.env.example`에 **이름 자체가 없다.** D-015(7일차)가 언론사 레벨 동시성 상한으로 `pressConcurrency`를
+`crawlerConfig`에 추가하면서 `.env.example` 반영이 누락됐다.
+
+**왜 조용한가**: `readInt`가 실패하면 조용히 기본값 3으로 폴백하므로 **화면은 완벽하게 멀쩡하다.**
+사용자는 이 변수를 조정하고 싶어도 `.env.example`을 봐서는 존재를 알 수 없다.
+
+**구조적으로 더 나쁜 점**: `README.md`와 `docs/ROADMAP.md` §개발 환경 준비는 개별 변수를 나열하지 않고
+**"`.env.example`을 보라"고 가리키기만 한다.** 그래서 `.env.example`에 이름이 없으면 **그 가리킴 자체가
+이 변수에 대해서만 거짓이 된다** — 세 문서를 아무리 대조해도 잡히지 않는 종류의 누락이다.
+
+**전수 조사 결과**: `process.env`를 읽는 파일은 `lib/crawler/config.ts` **단 하나**다. `lib/keyword/kiwi.ts`는
+환경변수를 전혀 읽지 않고 모델 경로가 하드코딩이다(설계 의도). 나머지 6개(`CRAWL_CONCURRENCY`·
+`CRAWL_TIMEOUT_MS`·`CRAWL_DELAY_MS`·`CRAWL_USER_AGENT`·`PLAYWRIGHT_CHANNEL`·`PLAYWRIGHT_HEADLESS`)는
+이름·기본값이 `.env.example`과 전부 일치한다. **어긋나는 것은 이 하나뿐이다.**
+
+**해소안**: `.env.example`의 `CRAWL_CONCURRENCY` 바로 아래에 주석 한 줄과 `CRAWL_PRESS_CONCURRENCY=3`을
+추가한다. 근거와 대조표는 `docs/env-audit.draft.md`에 있다.

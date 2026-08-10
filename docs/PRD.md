@@ -246,8 +246,8 @@
 - **Playwright 1.62.1** (헤드리스 크롬) — `lib/crawler/browser.ts`, `fetch-html.ts`에서 렌더링된 HTML 취득
 - **Cheerio 1.2.0** — `lib/crawler/parse.ts`의 `selectText`/`selectAllText`/`selectAttr`/`extractLinks`/`extractMeta`로 언론사별 셀렉터 파싱
 - **fast-xml-parser 5.10.1** (설치 완료) — `lib/crawler/rss.ts`에서 RSS 2.0 / Atom 피드 파싱. `rss-parser` 대신 고른 이유는 아래 참고
-- **p-limit 7.3.1** — `lib/crawler/run.ts`의 동시성 제한 배치 실행
-- **zod 4.4.3** — `lib/crawler/types.ts`의 `crawlTargetSchema`/`crawlRequestSchema` 입력 검증
+- **p-limit 7.3.1** — `lib/crawler/press-crawler.ts`의 동시성 제한 배치 실행
+- **zod 4.4.3** — `lib/crawler/types.ts`의 `crawlTargetSchema` 입력 검증(`fetchHtml`이 대상 1건을 검증하는 데 쓴다)
 
 **RSS 경로에 대한 두 가지 전제**
 

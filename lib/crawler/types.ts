@@ -1,8 +1,8 @@
 import { z } from 'zod'
 
 /**
- * 크롤 요청 스키마.
- * API 라우트와 러너가 같은 스키마를 공유해 입력 검증 지점을 하나로 유지한다.
+ * 크롤 대상 1건의 스키마. `fetchHtml`이 이 스키마로 입력을 검증한 뒤에만 브라우저를 연다
+ * (I-018 정리 이후 이 스키마의 유일한 소비자는 `fetch-html.ts`다 — D-039).
  */
 export const crawlTargetSchema = z.object({
   /** 크롤 대상 URL. http/https만 허용한다. */
@@ -24,15 +24,6 @@ export const crawlTargetSchema = z.object({
 
 export type CrawlTarget = z.input<typeof crawlTargetSchema>
 export type ResolvedCrawlTarget = z.output<typeof crawlTargetSchema>
-
-/** 배치 크롤 요청 스키마. 단건도 targets 배열 하나로 표현한다. */
-export const crawlRequestSchema = z.object({
-  targets: z.array(crawlTargetSchema).min(1).max(50),
-  /** 동시 실행 상한. 미지정 시 CRAWL_CONCURRENCY 환경변수를 따른다. */
-  concurrency: z.number().int().positive().max(10).optional(),
-})
-
-export type CrawlRequest = z.infer<typeof crawlRequestSchema>
 
 /** 크롤 성공 결과. */
 export interface CrawlSuccess {

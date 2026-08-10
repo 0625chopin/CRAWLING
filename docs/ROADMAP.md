@@ -45,8 +45,8 @@
 | **Phase 3** | 크롤 파이프라인 (실행·진행·저장) `F001` `F002` `F003` | 4 (013–016) | 4 | ✅ 완료 |
 | **Phase 4** | 수집 결과 조회 `F003` `F004` | 2 (017–018) | 2 | ✅ 완료 |
 | **Phase 5** | 형태소 분석 · 키워드 랭킹 `F005` `F006` | 4 (019–022) | 4 | ✅ 완료 |
-| **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 0 | ⬜ 대기 |
-| **합계** | | **25** | **22** | **88%** |
+| **Phase 6** | 정리 · 문서 정정 · 전체 검증 | 3 (023–025) | 1 | 🟡 진행 중 |
+| **합계** | | **25** | **23** | **92%** |
 
 의존 흐름은 아래 한 줄이 전부입니다.
 
@@ -117,9 +117,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 - [x] 완료 &nbsp;|&nbsp; 기능 ID: `F005` 사전 검증 &nbsp;|&nbsp; 선행: Task 001
 - **결과물**: `data/kiwi-model/`(9파일 105MB), `app/api/kiwi-check/route.ts`(임시 스모크 라우트), [`docs/kiwi-verification.md`](./kiwi-verification.md)
 - **확정 사실**: `build()` 1.4초 · 기사 1건 10ms · RSS +780MB · 조사 제거 후 토큰 57.8% 감소
-- **남긴 한계**: `app/api/kiwi-check/route.ts`는 정식 구현(`lib/keyword/`) 완료 후 **삭제 대상**(Task 023).
+- **남긴 한계**: `app/api/kiwi-check/route.ts`는 정식 구현(`lib/keyword/`) 완료 후 삭제 대상이었고 **14일차 Task 023에서 삭제됐다.** 그 라우트가 하던 검증은 `lib/keyword/kiwi.ts`가 대체한다(`userWords` 결합 확인만 예외 — **I-031**).
 
-**Phase 0 완료 기준** — 달성됨: `npm run dev` 후 5개 메뉴가 모두 열리고, `GET /api/kiwi-check`가 키워드 JSON을 돌려준다.
+**Phase 0 완료 기준** — 달성됨: `npm run dev` 후 5개 메뉴가 모두 열리고, `GET /api/kiwi-check`가 키워드 JSON을 돌려준다. (당시 판정 근거를 그대로 남긴다. **그 라우트는 14일차 Task 023에서 삭제됐다** — 같은 확인은 이제 `/keywords` 화면에서 한다.)
 
 ---
 
@@ -710,7 +710,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 - [x] 완료 (13일차, 2026-08-11) &nbsp;|&nbsp; 기능 ID: `F005` `F006` `F008` &nbsp;|&nbsp; 선행: Task 021, Task 012
 - **결과물**: `app/keywords/page.tsx` · `components/keywords/{analysis-filter-bar,analysis-summary,analysis-progress}.tsx` · `lib/api/keyword-client.ts`(022A) · `components/keywords/{top-keyword-cards,keyword-rank-table,keyword-rank-card-list}.tsx`(022B). 계약은 **D-040**~**D-043**.
-- **남긴 한계**: DoD ②의 "절반 가까이"가 실측(-32.6%)과 어긋난다 — 코드가 아니라 문구 문제이며 Task 023이 정정한다(**I-027**). 설계서 03의 Top 5 모바일 레이아웃이 문서 안에서 두 가지로 갈려 있었고 2열 줄바꿈으로 판정했다(**D-043**) — 설계서 정정도 Task 023 몫이다. 필터를 아주 좁게 걸면 Top 5(필터 후 기준)와 분석 요약(전체 기준)이 다른 기준으로 보인다(**D-040**, 감수하기로 한 것).
+- **남긴 한계**: DoD ②의 "절반 가까이"가 실측(-32.6%)과 어긋나 **14일차에 팀장이 문구를 정정했다**(**I-027** — 비율을 박지 않고 방향만 요구하고 근거를 병기하는 형태). 설계서 03의 Top 5 모바일 레이아웃이 문서 안에서 두 가지로 갈려 있었고 2열 줄바꿈으로 판정해 **14일차 Task 023이 정정을 반영했다**(**D-043**). 필터를 아주 좁게 걸면 Top 5(필터 후 기준)와 분석 요약(전체 기준)이 다른 기준으로 보인다(**D-040**, 감수하기로 한 것).
 - **참조**: `docs/screens/03-hot-keyword.md` (전 절 — "설계 결정과 근거", "상태별 화면" ①~⑥, "접근성", "마크업 스켈레톤")
 - **생성/수정 파일**
   - `app/keywords/page.tsx` (수정 — `ScreenPlaceholder` 제거, `?runId` 쿼리 수신)
@@ -736,7 +736,7 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
   - 상태 6종(분석 전/진행 중/완료/run 없음/결과 0건/실패)을 모두 구현한다.
 - **완료 조건 (DoD)**
   - [x] `app/keywords/page.tsx`에서 `ScreenPlaceholder`가 제거되었다. — 전면 재작성. `grep -rn ScreenPlaceholder app/keywords` 무매치. **5개 화면 전부가 실제 구현이 되어 `ScreenPlaceholder`를 쓰는 라우트가 0이다.**
-  - [x] 분석 요약의 "전체 토큰 수 → 조사·어미 제거 후"에서 숫자가 실제로 줄어드는 것이 보인다. — 17,915 → 12,080(**-32.6%**). **DoD 원문의 "절반 가까이"는 실데이터와 어긋난다**(담당·리뷰가 독립적으로 같은 값을 재현). `filteredTokenCount`가 조사·어미·접미사 3종만 빼는 값이라 30%대가 정상이며 코드 결함이 아니다 — 문구 정정은 **I-027**로 등재해 Task 023이 반영한다.
+  - [x] 분석 요약의 "전체 토큰 수 → 조사·어미 제거 후"에서 숫자가 **뚜렷하게** 줄어드는 것이 보인다(조사·어미·접미사만 제거하므로 **절반까지 줄지는 않는다**). — 17,915 → 12,080(**-32.6%**). **원문의 "절반 가까이"는 실데이터와 어긋나 14일차에 이 문구로 정정했다**(I-027). `filteredTokenCount`가 조사·어미·접미사 3개 태그군만 빼는 값이라 30%대가 정상이며 코드 결함이 아니다 — 담당과 리뷰가 독립적으로 같은 값을 재현해 확인했다.
   - [x] 랭킹 표에서 조사가 붙은 변형이 아니라 원형 명사가 집계되어 있다. — "AI"·"보안"·"반도체"·"기술"·"연구" 등 원형만. NNG·NNP·SL 외 품사 없음.
   - [x] 행의 `Ban` 버튼으로 상투어를 제외하면 재분석 후 랭킹에서 사라진다. — "고객"(17회) 추가 → `stopwordExcludedCount` 84→101(**정확히 +17**). 교차검증이 "AI"(96회)로 재확인 → 84→180(**정확히 +96**), 1위가 사라지고 "보안"이 승격. 둘 다 삭제 + `force=true` 재분석으로 원복 확인.
   - [x] run이 하나도 없을 때 `Inbox` 빈 상태 + `[크롤링 실행하러 가기]`가 뜬다. — 담당은 코드로만 확인했고 **교차검증이 실측으로 닫았다**: `data/runs`를 임시 개명하는 방식과 `page.route()`로 `/api/runs`를 빈 배열로 가로채는 방식 **두 가지로 각각** 확인 후 원복.
@@ -753,7 +753,9 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 
 ### Task 023 · 임시 코드 제거 및 설계 문서 정정
 
-- [ ] 대기 &nbsp;|&nbsp; 기능 ID: — &nbsp;|&nbsp; 선행: Task 022
+- [x] 완료 (14일차, 2026-08-11) &nbsp;|&nbsp; 기능 ID: — &nbsp;|&nbsp; 선행: Task 022
+- **결과물**: 삭제 `app/api/kiwi-check/route.ts` · `components/common/screen-placeholder.tsx` · `lib/crawler/run.ts`. 수정 `lib/crawler/{types,index,press-crawler}.ts` · `docs/screens/03-hot-keyword.md` · `docs/PRD.md`.
+- **남긴 한계**: `kiwi-check` 삭제로 `userWords` 결합을 태워 확인할 경로가 사라졌다(**I-031**) — 지금은 `userWords: []`라 검증 대상이 없어 손실이 아니지만, Q1이 다시 열리면 진단 경로를 새로 만들어야 한다. `ScreenPlaceholder` 문자열은 `docs/` 하위 기록 문서에 역사적 서술로 남아 있다(코드는 0건).
 - **참조**: `docs/kiwi-verification.md` §7 §8
 - **생성/수정 파일**
   - `app/api/kiwi-check/route.ts` (**삭제**)
@@ -766,16 +768,18 @@ cp models/cong/base/* data/kiwi-model/   # 9개 파일 105MB
 - **13일차에 범위가 다시 늘었다** — 아래 3건이 Task 022 완료로 확정돼 이 Task에 붙는다. 「남은 것은 임시 코드 삭제뿐」은 더 이상 맞지 않는다.
   - `lib/crawler/{run.ts, types.ts, index.ts, press-crawler.ts}` — `runCrawl` 죽은 코드 제거(**I-018**). 제거·존치 범위는 **D-039**가 확정했다: `run.ts` 전체 삭제 · `types.ts`에서 `crawlRequestSchema`·`CrawlRequest`만 제거(나머지는 `fetchHtml`이 계속 쓴다) · `index.ts` 재수출 줄 제거 · `press-crawler.ts` 주석 정리.
   - `docs/screens/03-hot-keyword.md` — ① 마크업 스켈레톤의 더미 `RunOption`·`MOCK_RUNS`(**I-026**) ② Top 5 모바일 레이아웃 서술 180~182·205행을 2열 줄바꿈으로 교체(**D-043**).
-  - `docs/ROADMAP.md` Task 022 DoD ②와 §검증 시나리오 4-3의 "절반 가까이" 문구(**I-027**). **팀장이 반영한다** — 이 파일은 워크스트림이 편집하지 않는다.
+  - `docs/ROADMAP.md` Task 022 DoD ②와 §검증 시나리오 4-3의 "절반 가까이" 문구(**I-027**) — **14일차에 팀장이 반영 완료.** 이 파일은 워크스트림이 편집하지 않는다.
+  - `docs/PRD.md` 249·250행 — `runCrawl` 삭제로 끊긴 참조(`lib/crawler/run.ts` · `crawlRequestSchema`). **14일차에 반영 완료.**
+  - `docs/screens/03-hot-keyword.md`의 가상 수치 `15,204 → 6,318` **3곳**(데스크톱 ASCII · 모바일 ASCII · `MOCK_SUMMARY` TSX 코드 블록)을 13일차 실측값으로 교체. **14일차에 반영 완료.** 세 번째가 코드 블록이라 서술만 고치면 남는 자리였다.
   - `docs/ROADMAP.md` 진행률 표 최종 갱신은 이 Task가 아니라 **회차 마감에 팀장이 수행**한다(§작업 진행 규칙 4).
 - **구현 규칙**
   - `kiwi-check` 삭제 전에 `lib/keyword/`가 그 라우트가 하던 일을 전부 대체하는지 확인한다.
   - `ScreenPlaceholder` 삭제 시 남은 import가 없는지 `npm run typecheck`로 확인한다.
 - **완료 조건 (DoD)**
-  - [ ] `app/api/kiwi-check/` 와 `components/common/screen-placeholder.tsx` 가 저장소에 없다.
-  - [ ] `grep -r "ScreenPlaceholder"` 결과가 0건이다.
-  - [ ] `docs/screens/03-hot-keyword.md`를 읽고 "모델을 브라우저가 받는다"고 오해할 여지가 없다.
-  - [ ] `npm run lint` · `npm run typecheck` · `npm run test` · `npm run build` 모두 통과.
+  - [x] `app/api/kiwi-check/` 와 `components/common/screen-placeholder.tsx` 가 저장소에 없다. — `lib/crawler/run.ts`도 함께 삭제(**D-039**). 빌드 라우트 목록에서 `/api/kiwi-check`가 사라진 것으로 재확인.
+  - [x] `grep -r "ScreenPlaceholder"` 결과가 0건이다. — **코드(`*.ts`/`*.tsx`) 기준 0건.** `docs/` 하위 약 40건은 "Task 023에서 삭제한다"류의 과거 진행 기록·설계 각주이며 컴포넌트 실물이 아니다(리뷰 판정).
+  - [x] `docs/screens/03-hot-keyword.md`를 읽고 "모델을 브라우저가 받는다"고 오해할 여지가 없다. — 리뷰가 grep이 아니라 **읽어서** 판정. 65~68·277·759~780행이 "서버에서 `build()`", "클라이언트가 내려받는 게 아니다", "다운로드 진행률 문구를 쓰지 않는다"를 반복 명시하고 TSX 인라인 주석까지 같은 내용을 박아 뒀다.
+  - [x] `npm run lint` · `npm run typecheck` · `npm run test` · `npm run build` 모두 통과. — 담당·리뷰·팀장이 각각 실행. 빌드 라우트 **19종**(정적 6 · 동적 13).
 
 ### Task 024 · 실행 안내 최종 점검 (환경변수 동기화)
 
@@ -949,7 +953,7 @@ npm run dev
 |---|------|-----------|
 | 4-1 | 진입 시 run 셀렉터 | 3단계에서 넘어온 run이 선택되어 있음 |
 | 4-2 | `[분석 시작]` | 3단계 스텝(모델 로딩 → 토큰화 → 집계)이 순차 표시. **첫 실행은 1.4초 모델 로딩이 얹힘** |
-| 4-3 | 분석 요약 5개 수치 | "전체 토큰 수"보다 "조사·어미 제거 후"가 **절반 가까이 작다** ← 조사 제거의 증거 |
+| 4-3 | 분석 요약 5개 수치 | "전체 토큰 수"보다 "조사·어미 제거 후"가 **뚜렷하게 작다** ← 조사 제거의 증거. 조사·어미·접미사만 빠지고 동사·형용사·숫자는 남으므로 **절반까지 줄지는 않는다**(13일차 실측 -32.6%, I-027) |
 | 4-4 | Top 5 카드 | 1위가 가장 큰 폰트 + 가장 진한 상단 강조선, 품사 배지 표시 |
 | 4-5 | 랭킹 표 | 빈도 내림차순, 비중 막대와 백분율 텍스트 병기 |
 | 4-6 | **조사 제거 확인** | `삼성전자가`·`삼성전자를` 같은 변형이 아니라 `삼성전자` 하나로 합산되어 있음 |

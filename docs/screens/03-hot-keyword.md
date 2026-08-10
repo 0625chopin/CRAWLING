@@ -111,7 +111,7 @@ Kiwi 모델 로딩은 첫 실행 시 수 초가 걸릴 수 있고 토큰화·집
 │ ┌──────────────────────────────────────────────────────────────────────┐  │
 │ │ ② 분석 요약                                                             │  │
 │ │  분석 기사   전체 토큰   조사·어미 제거 후   불용어 제외   고유 키워드      │  │
-│ │   87건       15,204개      6,318개           412개         1,096개      │  │
+│ │   53건       17,915개     12,080개            84개         2,412개      │  │
 │ └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
 │  ③ Top 5 핫 키워드                              [불용어 관리로 이동 →]      │
@@ -169,20 +169,25 @@ Kiwi 모델 로딩은 첫 실행 시 수 초가 걸릴 수 있고 토큰화·집
 │                             │
 │ ┌─────────────────────┐   │
 │ │ ② 분석 요약 (2열 그리드)│   │
-│ │ 분석 기사   87건        │   │
-│ │ 전체 토큰   15,204개    │   │
-│ │ 제거 후 남음 6,318개    │   │
-│ │ 불용어 제외  412개      │   │
-│ │ 고유 키워드  1,096개    │   │
+│ │ 분석 기사   53건        │   │
+│ │ 전체 토큰   17,915개    │   │
+│ │ 제거 후 남음 12,080개   │   │
+│ │ 불용어 제외  84개       │   │
+│ │ 고유 키워드  2,412개    │   │
 │ └─────────────────────┘   │
 │                             │
 │ ③ Top 5   [불용어 관리→]  │
-│ ┌───┬───┐ ← 가로 스크롤     │
-│ │1위 │2위│  snap-x,         │
-│ │인공 │삼성│  overflow-x-auto │
+│ ┌───┬───┐  grid-cols-2,    │
+│ │1위 │2위│  가로 스크롤 없이  │
+│ │인공 │삼성│  2열로 줄바꿈    │
 │ │지능 │전자│                 │
-│ │128 │96 │→ 이어서 3·4·5위  │
+│ │128 │96 │                 │
+│ ├───┼───┤ ↓ 3·4위 다음 줄  │
+│ │3위 │4위│                  │
 │ └───┴───┘                  │
+│ ┌───┐    ↓ 5위 마지막 줄    │
+│ │5위 │                      │
+│ └───┘                      │
 │                             │
 │ ┌─────────────────────┐   │
 │ │ ④ 랭킹 — 카드 리스트     │   │
@@ -202,7 +207,7 @@ Kiwi 모델 로딩은 첫 실행 시 수 초가 걸릴 수 있고 토큰화·집
 ```
 
 - 640px 미만에서는 `Table`을 그대로 쓰지 않고 행마다 `Card` 1장으로 대체한다(README 공통 규칙 — "표는 카드 리스트로 대체"). 정보 구성은 동일(순위/키워드/품사/횟수/비중/액션).
-- Top 5는 5칸이 좁은 화면에 다 안 들어가므로 `overflow-x-auto snap-x snap-mandatory`로 가로 스크롤시킨다.
+- Top 5는 5칸이 좁은 화면에 다 안 들어가므로 `grid grid-cols-2 gap-3`로 2열 줄바꿈한다(가로 스크롤 아님) — 근거는 `docs/DECISIONS.md`의 **D-043**.
 
 ---
 
@@ -387,6 +392,18 @@ npx shadcn@latest add select toggle-group label
 
 읽기 편하도록 한 블록에 이어 붙였을 뿐, **구현은 위 "컴포넌트 분할 경계" 표대로 파일을 나눈다.**
 
+### ⚠️ 아래 스켈레톤의 `RunOption` 선언을 그대로 베끼지 않는다 (I-026)
+
+스켈레톤이 선언하는 run 셀렉터용 더미 타입 `RunOption`(`{ id, label }`)은 **실제 API 응답과 다르다.** 이
+셀렉터가 실제로 소비하는 것은 새 API가 아니라 **Task 017이 확정한 `GET /api/runs`**이고, 그 응답 타입은
+`lib/api/run-client.ts`의 `RunListItem`이다 — `id`·`label` 외에 `startedAt`·`finishedAt`·`status`·
+`targetPressCount`·`successCount`·`failCount`·`skippedCount` 7개가 더 있다. 구현은 `RunOption`을 새로
+선언하지 말고 `lib/api/run-client.ts`의 `RunListItem`·`fetchRuns()`를 그대로 import한다(018A가
+`components/results/run-select.tsx`에서 쓴 방식 그대로이며, 022A의 `analysis-filter-bar.tsx`가 실제로 이
+방식으로 구현돼 있다). `MOCK_RUNS`도 화면 형태를 보여주기 위한 정적 더미일 뿐 실 데이터는
+`fetchRuns()`로 조회한다. `AnalysisSummary`·`KeywordRankItem`·`PosTag`는 `lib/types/keyword.ts`와
+필드명·타입이 어긋나지 않으므로 그대로 옮겨도 안전하다 — 어긋나는 것은 `RunOption` 하나뿐이다.
+
 ```tsx
 'use client'
 
@@ -456,12 +473,14 @@ const MOCK_RUNS: RunOption[] = [
   { id: 'run_20260809_2130', label: '2026-08-09 21:30 · 언론사 3곳 · 성공 54건' },
 ]
 
+// 13일차 실측값(Task 022A 검증 회차). 근거 없는 예시 수치를 스켈레톤에 그대로 두면 다음 사람이
+// 베껴 퍼뜨리므로(I-026·I-024와 같은 계열의 함정) 실측으로 맞춰 둔다.
 const MOCK_SUMMARY: AnalysisSummary = {
-  articleCount: 87,
-  totalTokenCount: 15204,
-  filteredTokenCount: 6318,
-  stopwordExcludedCount: 412,
-  uniqueKeywordCount: 1096,
+  articleCount: 53,
+  totalTokenCount: 17915,
+  filteredTokenCount: 12080,
+  stopwordExcludedCount: 84,
+  uniqueKeywordCount: 2412,
 }
 
 const MOCK_TOP_KEYWORDS: KeywordRankItem[] = [

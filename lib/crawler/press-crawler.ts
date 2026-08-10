@@ -132,8 +132,8 @@ async function collectArticlePage(
 
 /**
  * 링크 목록을 동시성 제한 아래에서 본문 수집 단계로 밀어 넣는다. 동시성·지연은
- * `lib/crawler/config.ts`(화면에 노출하지 않는 값)를 그대로 쓴다 — `lib/crawler/run.ts`의
- * `runCrawl`과 같은 p-limit 패턴이되, 완료마다 `onArticleDone`을 부르는 점이 다르다.
+ * `lib/crawler/config.ts`(화면에 노출하지 않는 값)를 그대로 쓴다 — `fetchHtml` 호출을
+ * p-limit으로 감싸는 패턴이되, 완료마다 `onArticleDone`을 부르는 점이 다르다.
  * 개별 작업이 예기치 않게 throw해도(예: 셀렉터 구문 오류) 배치 전체가 무너지지 않도록 값으로 잡는다.
  */
 async function collectArticlePages(

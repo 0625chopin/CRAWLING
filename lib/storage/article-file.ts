@@ -19,9 +19,14 @@ function sanitizeMetaValue(value: string): string {
 }
 
 /**
- * 기사 txt 직렬화. 포맷은 상단 메타 라인(7줄) + 빈 줄 + 본문이다(ROADMAP Task 007이 확정한 포맷).
- * 본문은 그대로 옮겨 적는다 — article-parser.ts(Task 013A)가 보존한 문단 개행(`\n\n`)을 여기서
- * 다시 접으면 화면 미리보기(docs/screens/02-collect-result.md ⑤ "본문 개행 보존 전제")가 깨진다.
+ * 기사 txt 직렬화. 포맷은 상단 메타 라인(기본 7줄) + 빈 줄 + 본문이다(ROADMAP Task 007이 확정한
+ * 포맷). 본문은 그대로 옮겨 적는다 — article-parser.ts(Task 013A)가 보존한 문단 개행(`\n\n`)을
+ * 여기서 다시 접으면 화면 미리보기(docs/screens/02-collect-result.md ⑤ "본문 개행 보존 전제")가
+ * 깨진다.
+ *
+ * `category`(Task 027)는 **있을 때만** 마지막 줄로 얹는다 — 항상 쓰면 카테고리 줄이 없는 과거
+ * 기사 txt와 지금 만드는 파일의 모양이 달라져 "없으면 undefined로 흘린다"는 하위호환 전제가
+ * 애초에 검증되지 않는다. 없는 경우(카테고리 미상)는 그냥 줄 자체를 만들지 않는다.
  */
 export function serializeArticle(article: Article): string {
   const metaLines = [
@@ -33,6 +38,9 @@ export function serializeArticle(article: Article): string {
     `# contentSource: ${article.contentSource}`,
     `# crawledAt: ${article.crawledAt}`,
   ]
+  if (article.category !== undefined) {
+    metaLines.push(`# category: ${article.category}`)
+  }
 
   return `${metaLines.join('\n')}\n\n${article.content}`
 }

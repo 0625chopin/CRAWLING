@@ -3,7 +3,7 @@ import 'server-only'
 import pLimit from 'p-limit'
 
 import type { Article } from '@/lib/types/article'
-import type { HtmlPressSource, PressSource, RssPressSource } from '@/lib/types/press'
+import type { HtmlPressSource, PressCategory, PressSource, RssPressSource } from '@/lib/types/press'
 
 import { checkArticleContent, extractArticleContent, resolveMaxArticlesPerPress } from './article-parser'
 import { crawlerConfig } from './config'
@@ -89,7 +89,8 @@ async function collectArticlePage(
   runId: string,
   link: ArticleLink,
   contentSelector: string,
-  titleSelector: string | undefined
+  titleSelector: string | undefined,
+  category: PressCategory
 ): Promise<{ ok: true; article: ArticleDraft } | { ok: false; failure: CrawlFailure }> {
   const page = await fetchHtml({ url: link.url })
   if (!page.ok) {
@@ -126,6 +127,7 @@ async function collectArticlePage(
       content: check.content,
       contentSource: 'article-page',
       crawledAt: new Date().toISOString(),
+      category,
     },
   }
 }
@@ -142,6 +144,7 @@ async function collectArticlePages(
   links: ArticleLink[],
   contentSelector: string,
   titleSelector: string | undefined,
+  category: PressCategory,
   hooks: PressCrawlHooks
 ): Promise<{ articles: ArticleDraft[]; failures: CrawlFailure[]; skipped: string[] }> {
   const limit = pLimit(crawlerConfig.concurrency)
@@ -161,7 +164,7 @@ async function collectArticlePages(
           return { kind: 'skipped', url: link.url }
         }
         try {
-          const result = await collectArticlePage(pressId, runId, link, contentSelector, titleSelector)
+          const result = await collectArticlePage(pressId, runId, link, contentSelector, titleSelector, category)
           return result.ok
             ? { kind: 'article', article: result.article }
             : { kind: 'failure', failure: result.failure }
@@ -202,6 +205,7 @@ function collectRssSummaries(
   pressId: string,
   runId: string,
   items: FeedItem[],
+  category: PressCategory,
   hooks: PressCrawlHooks
 ): PressCrawlResult {
   const articles: ArticleDraft[] = []
@@ -229,6 +233,7 @@ function collectRssSummaries(
           content: check.content,
           contentSource: 'rss-summary',
           crawledAt: new Date().toISOString(),
+          category,
         })
       }
     }
@@ -255,7 +260,7 @@ async function crawlRssPress(
   const items = feedResult.items.slice(0, maxCount)
 
   if (!press.contentSelector) {
-    return collectRssSummaries(press.id, runId, items, hooks)
+    return collectRssSummaries(press.id, runId, items, press.category, hooks)
   }
 
   // 링크 없는 피드 항목은 원문 요청 자체를 시도할 수 없다. collectRssSummaries(174~181행)는
@@ -292,6 +297,7 @@ async function crawlRssPress(
     links,
     press.contentSelector,
     undefined,
+    press.category,
     offsetHooks
   )
   return { pressId: press.id, articles, failures: [...missingLinkFailures, ...failures], skipped }
@@ -334,6 +340,7 @@ async function crawlHtmlPress(
     links,
     press.contentSelector,
     press.titleSelector,
+    press.category,
     hooks
   )
   return { pressId: press.id, articles, failures, skipped }

@@ -70,8 +70,17 @@ vi.mock('./config', () => ({ crawlerConfig: configMock }))
 
 const RUN_ID = '20260810-090000'
 
+// category는 이 스위트의 시나리오와 무관하지만 Press.category가 필수 출력 필드라 값을 채워야
+// 한다(21일차 저장소 계층 Task 026 — docs/ISSUES.draft.저장소계층.md, I-050과 같은 형태의 함정).
 function makeRssPress(id: string, name: string): RssPressSource {
-  return { id, name, isActive: true, sourceType: 'rss', feedUrl: `https://example.com/${id}.xml` }
+  return {
+    id,
+    name,
+    isActive: true,
+    category: 'it-ai',
+    sourceType: 'rss',
+    feedUrl: `https://example.com/${id}.xml`,
+  }
 }
 
 function makeHtmlPress(id: string, name: string): HtmlPressSource {
@@ -79,6 +88,7 @@ function makeHtmlPress(id: string, name: string): HtmlPressSource {
     id,
     name,
     isActive: true,
+    category: 'it-ai',
     sourceType: 'html',
     listUrl: `https://example.com/${id}`,
     articleLinkSelector: '.a',
@@ -98,9 +108,10 @@ function makeRun(overrides: Partial<CrawlRun> = {}): CrawlRun {
     skippedCount: 0,
     // z.infer 출력 타입은 .default(...)가 있어도 필수 필드다(skippedCount와 같은 패턴) —
     // 앞 구간(저장소 계층)이 crawlRunSchema에 pressResults를 추가하면서 이 리터럴이 한 번 깨졌고
-    // (I-050), failedPressCount(I-040)도 같은 이유로 여기 명시해야 한다.
+    // (I-050), failedPressCount(I-040)·targetCategories(Task 027)도 같은 이유로 여기 명시해야 한다.
     pressResults: [],
     failedPressCount: 0,
+    targetCategories: [],
     status: 'running',
     ...overrides,
   }
@@ -152,7 +163,10 @@ beforeEach(() => {
   listArticlesMock.mockReset()
   crawlPressMock.mockReset()
   configMock.pressConcurrency = 5
-  createRunMock.mockImplementation(async (pressIds: string[]) => makeRun({ targetPressIds: pressIds }))
+  createRunMock.mockImplementation(
+    async (pressIds: string[], targetCategories: CrawlRun['targetCategories'] = []) =>
+      makeRun({ targetPressIds: pressIds, targetCategories })
+  )
   finishRunMock.mockImplementation(
     async (
       runId: string,
@@ -318,6 +332,35 @@ describe('startRun', () => {
         },
       ]
     )
+  })
+
+  // Task 027 회귀: targetCategories는 언론사 선택과 무관한 스냅샷이라 createRun에 그대로 실려야
+  // 한다 — app/api/crawl/route.ts가 categories를 이미 pressIds로 풀어 넘긴다는 계약이므로, 여기서는
+  // "그때 요청한 카테고리가 무엇이었는지"만 전달되는지 확인한다.
+  it('categories를 넘기면 createRun에 targetCategories로 그대로 전달된다(Task 027)', async () => {
+    const press = makeRssPress('press-a', '언론사 A')
+    getPressMock.mockResolvedValue(press)
+    crawlPressMock.mockResolvedValue({ pressId: press.id, articles: [], failures: [], skipped: [] } satisfies PressCrawlResult)
+
+    await startRun({ pressIds: [press.id], categories: ['sports', 'economy'] })
+
+    expect(createRunMock).toHaveBeenCalledWith([press.id], ['sports', 'economy'])
+    await vi.waitFor(async () => {
+      expect((await getRunProgress(RUN_ID)).status).not.toBe('running')
+    })
+  })
+
+  it('categories를 넘기지 않으면 createRun에 빈 배열이 전달된다(기존 pressIds 경로)', async () => {
+    const press = makeRssPress('press-a', '언론사 A')
+    getPressMock.mockResolvedValue(press)
+    crawlPressMock.mockResolvedValue({ pressId: press.id, articles: [], failures: [], skipped: [] } satisfies PressCrawlResult)
+
+    await startRun({ pressIds: [press.id] })
+
+    expect(createRunMock).toHaveBeenCalledWith([press.id], [])
+    await vi.waitFor(async () => {
+      expect((await getRunProgress(RUN_ID)).status).not.toBe('running')
+    })
   })
 
   it('이미 running인 잡이 있으면 새 실행을 RunAlreadyRunningError로 거절한다(409로 내려갈 신호)', async () => {

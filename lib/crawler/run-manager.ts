@@ -354,7 +354,16 @@ async function failRunOnUnexpectedError(
  * 구현 규칙, PRD §실행 환경). 서버리스 배포는 애초에 대상이 아니다.
  */
 export async function startRun(input: CrawlStartRequest): Promise<{ runId: string }> {
-  const { pressIds, maxArticlesPerPress } = crawlStartRequestSchema.parse(input)
+  const { pressIds, maxArticlesPerPress, categories } = crawlStartRequestSchema.parse(input)
+  const targetCategories = categories ?? []
+
+  // 호출부(app/api/crawl/route.ts)가 categories를 활성 언론사 id로 미리 풀어 pressIds와 합친 뒤
+  // 넘긴다는 계약이다(Task 027) — 여기서 다시 카테고리를 언론사로 해석하지 않는다. pressIds가
+  // 비어 있는 채로 여기 도달하면 그 계약이 깨진 것이므로 빈 실행을 조용히 만들지 않고 던진다.
+  const targetPressIds = pressIds ?? []
+  if (targetPressIds.length === 0) {
+    throw new Error('크롤 대상 언론사가 없습니다(categories가 활성 언론사로 풀리지 않았거나 pressIds가 비었습니다)')
+  }
 
   // 동시에 여러 run을 시작하는 것은 막는다(로컬 1인 도구 + Playwright 브라우저 자원 공유).
   // 레지스트리에 남은 잡 중 아직 'running'인 것이 있으면 거절한다 — 서버 재시작으로 죽은
@@ -364,11 +373,11 @@ export async function startRun(input: CrawlStartRequest): Promise<{ runId: strin
     throw new RunAlreadyRunningError(runningJob.runId)
   }
 
-  const pressSources = await Promise.all(pressIds.map((id) => getPress(id)))
-  const run = await createRun(pressIds)
+  const pressSources = await Promise.all(targetPressIds.map((id) => getPress(id)))
+  const run = await createRun(targetPressIds, targetCategories)
 
   const defaultTarget = resolveMaxArticlesPerPress(maxArticlesPerPress)
-  const pressStatuses: PressRunStatus[] = pressIds.map((id, index) => {
+  const pressStatuses: PressRunStatus[] = targetPressIds.map((id, index) => {
     const press = pressSources[index]
     if (press) {
       return { pressId: press.id, name: press.name, status: 'waiting', collected: 0, target: defaultTarget }

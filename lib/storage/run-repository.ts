@@ -8,6 +8,7 @@ import {
   type CrawlRunStatus,
   type PressRunResult,
 } from '@/lib/types/crawl-run'
+import type { PressCategory } from '@/lib/types/press'
 
 import { ensureDir, writeJson } from './json-store'
 import { articlesDir, runDir, runMetaPath, runsRootDir } from './paths'
@@ -95,12 +96,21 @@ async function readRunMeta(runId: string): Promise<CrawlRun> {
   return result.data
 }
 
-/** 새 실행을 만든다. `articles/` 디렉터리까지 함께 만들어 이후 saveArticle이 바로 쓸 수 있게 한다. */
-export async function createRun(targetPressIds: string[]): Promise<CrawlRun> {
+/**
+ * 새 실행을 만든다. `articles/` 디렉터리까지 함께 만들어 이후 saveArticle이 바로 쓸 수 있게 한다.
+ * `targetCategories`(Task 027)는 언론사 선택 자체와 무관한 스냅샷이다 — 카테고리로 대상을 골랐다면
+ * 호출부(`run-manager.ts`)가 이미 `targetPressIds`로 풀어 넘긴 뒤이므로, 여기서는 "그때 어느
+ * 카테고리를 노렸는지"만 기록해 둔다. `pressIds`로 직접 고른 실행은 빈 배열을 넘긴다.
+ */
+export async function createRun(
+  targetPressIds: string[],
+  targetCategories: PressCategory[] = []
+): Promise<CrawlRun> {
   const id = await allocateRunId()
   const run = crawlRunSchema.parse({
     id,
     targetPressIds,
+    targetCategories,
     startedAt: new Date().toISOString(),
     finishedAt: null,
     successCount: 0,

@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { pressCategorySchema } from './press'
+
 /** 화면 설계서 01의 crawlStatus와 1:1로 맞춘다. 화면 전용 'idle'은 저장하지 않는다(docs/PRD.md §CrawlRun). */
 export const crawlRunStatusSchema = z.enum([
   'running',
@@ -108,15 +110,41 @@ export const crawlRunSchema = z.object({
    * 예외를 삼켜 **해당 run이 목록에서 통째로 사라진다**(D-026에서 실제 코드 경로로 확인한 함정).
    */
   pressResults: z.array(pressRunResultSchema).default([]),
+  /**
+   * 이 실행이 대상으로 삼은 카테고리 스냅샷(Task 027). `targetPressIds`처럼 id만 남기면 언론사가
+   * 나중에 삭제되거나 카테고리가 바뀌었을 때 "그때 어느 카테고리를 노렸는지"를 복구할 방법이
+   * 없다 — D-026·I-014가 언론사 이름을 스냅샷한 것과 같은 이유다. `pressIds`로 직접 선택한
+   * 실행(카테고리 미사용)은 빈 배열이다.
+   *
+   * **선택 필드 + 기본값 빈 배열인 이유**: `pressResults`·`failedPressCount`와 같은 함정이다 —
+   * 이 필드가 생기기 전의 `run-meta.json`을 필수로 걸면 스키마에서 떨어지고 → `readRunMeta`가
+   * 손상으로 던지고 → `listRuns`가 그 예외를 삼켜 **해당 run이 목록에서 통째로 사라진다**(I-022).
+   */
+  targetCategories: z.array(pressCategorySchema).default([]),
   status: crawlRunStatusSchema,
 })
 export type CrawlRun = z.infer<typeof crawlRunSchema>
 
-/** 크롤링 실행 요청. 화면의 언론사 체크박스 선택과 언론사당 최대 기사 수 입력에 대응한다. */
-export const crawlStartRequestSchema = z.object({
-  pressIds: z.array(z.string().min(1)).min(1, '언론사를 최소 1곳 선택하세요'),
-  maxArticlesPerPress: z.number().int().positive().optional(),
-})
+/**
+ * 크롤링 실행 요청. 화면의 언론사 체크박스 선택과 언론사당 최대 기사 수 입력에 대응한다.
+ * **`pressIds`는 그대로 둔다**(화면이 아직 이 필드만 보낸다) — `categories`는 Task 027이 더한
+ * 대안 선택 경로다. 호출부(`app/api/crawl/route.ts`)가 `categories`를 활성 언론사 id로 미리 풀어
+ * `pressIds`와 합친 뒤 `startRun`을 부르므로, 이 스키마는 "둘 중 최소 하나"만 강제한다 — 실제
+ * 언론사 존재·활성 여부는 여기서 검증하지 않는다(discriminatedUnion을 쓰지 않은 이유: 두 필드가
+ * 서로 다른 모양으로 갈리는 게 아니라 "적어도 하나"라는 존재 제약일 뿐이라 나머지 필드 형태가
+ * 완전히 같다).
+ */
+export const crawlStartRequestSchema = z
+  .object({
+    pressIds: z.array(z.string().min(1)).optional(),
+    /** 카테고리로 대상 언론사를 고른다(Task 027). pressIds와 함께 보내면 합집합이 대상이 된다. */
+    categories: z.array(pressCategorySchema).optional(),
+    maxArticlesPerPress: z.number().int().positive().optional(),
+  })
+  .refine(
+    (data) => (data.pressIds?.length ?? 0) > 0 || (data.categories?.length ?? 0) > 0,
+    { message: '언론사 또는 카테고리를 최소 1개 선택하세요', path: ['pressIds'] }
+  )
 export type CrawlStartRequest = z.infer<typeof crawlStartRequestSchema>
 
 /**

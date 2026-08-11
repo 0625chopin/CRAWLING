@@ -129,10 +129,35 @@ function toPlainText(raw: string): string {
 }
 
 /**
+ * 노컷뉴스 계열 피드는 `<pubDate>`에서 월 이름 자리에 숫자를 그대로 찍는다
+ * (`"Tue, 11 08 2026 07:00:00 +0900"` — RFC 822라면 두 번째 자리에 `Aug`가 와야 한다,
+ * 22일차 `docs/press-candidates.md` 실측). 이 문자열을 그대로 `new Date()`에 넘기면 V8이
+ * 첫 번째 숫자를 월로, 두 번째 숫자를 일로 오독해 11월 8일이라는 **존재하지 않는 오늘 이후
+ * 날짜를 "유효한" 값으로 돌려준다** — `Number.isNaN` 검사로는 못 잡는 조용한 오파싱이다
+ * (직접 재현: `new Date("Tue, 11 08 2026 07:00:00 +0900")` → `2026-11-07T22:00:00.000Z`,
+ * 실제로는 8월 11일 기사였다). RFC 822의 필드 순서(요일, **일**, 월, 연도)를 그대로 쓰되
+ * 월 자리만 숫자로 잘못 찍은 형태이므로, 일/월 자리를 명시적으로 고정해 이 정규식으로 먼저
+ * 잡은 뒤에만 `Date`로 넘긴다.
+ */
+const MALFORMED_NUMERIC_MONTH_PATTERN =
+  /^\w{3},\s*(\d{1,2})\s+(\d{1,2})\s+(\d{4})\s+(\d{2}:\d{2}:\d{2})\s+([+-]\d{2})(\d{2})$/
+
+function normalizeMalformedNumericMonth(trimmed: string): string | undefined {
+  const match = trimmed.match(MALFORMED_NUMERIC_MONTH_PATTERN)
+  if (!match) return undefined
+  const [, day, month, year, time, tzHour, tzMinute] = match
+  if (Number(month) < 1 || Number(month) > 12 || Number(day) < 1 || Number(day) > 31) {
+    return undefined
+  }
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${time}${tzHour}:${tzMinute}`
+}
+
+/**
  * RFC 822·ISO 8601·"YYYY-MM-DD HH:mm:ss"(타임존 없음) 세 형식을 실제 피드에서 확인했다
  * (docs/press-candidates.md §표에서 놓치면 안 되는 것). 타임존이 없는 값은 이 도구의 대상이
- * 전부 국내 언론사라는 전제로 KST(+09:00)를 붙인다. 그래도 파싱에 실패하면 예외 대신
- * undefined로 흘린다 — 발행일 하나 때문에 피드 전체 파싱이 죽으면 안 된다.
+ * 전부 국내 언론사라는 전제로 KST(+09:00)를 붙인다. 위 「월 자리 숫자」 기형 형식은 일반
+ * 경로로 넘기기 전에 먼저 바로잡는다. 그래도 파싱에 실패하면 예외 대신 undefined로 흘린다 —
+ * 발행일 하나 때문에 피드 전체 파싱이 죽으면 안 된다.
  */
 function parsePublishedAt(raw: string): string | undefined {
   const trimmed = raw.trim()
@@ -141,7 +166,7 @@ function parsePublishedAt(raw: string): string | undefined {
   const withoutTimezone = trimmed.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})$/)
   const normalized = withoutTimezone
     ? `${withoutTimezone[1]}T${withoutTimezone[2]}+09:00`
-    : trimmed
+    : (normalizeMalformedNumericMonth(trimmed) ?? trimmed)
 
   const parsed = new Date(normalized)
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString()

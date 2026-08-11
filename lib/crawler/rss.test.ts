@@ -96,6 +96,42 @@ describe('fetchFeed — RSS 2.0', () => {
     expect(result.items[0].publishedAt).toBe('2026-08-09T09:00:00.000Z')
   })
 
+  it('월 이름 자리에 숫자를 찍는 기형 RFC 822(노컷뉴스 실측)를 일/월 순서 그대로 바로잡는다', async () => {
+    // 22일차 실측(docs/press-candidates.md): "Tue, 11 08 2026 07:00:00 +0900"을 손대지 않고
+    // new Date()에 넘기면 11을 월로, 08을 일로 오독해 11월 8일(미래·존재하지 않는 값)이 나온다.
+    // RFC 822 필드 순서(요일, 일, 월, 연도)를 지키면 11일 8월(Aug)이 맞다.
+    const xml = `<rss><channel><item>
+        <title>t</title><link>https://example.com/1</link>
+        <description>d</description>
+        <pubDate>Tue, 11 08 2026 07:00:00 +0900</pubDate>
+      </item></channel></rss>`
+    stubFetch(respond(xml, 'application/xml'))
+
+    const result = await fetchFeed('https://example.com/feed.xml')
+
+    assertOk(result)
+    expect(result.items[0].publishedAt).toBe(
+      new Date('2026-08-11T07:00:00+09:00').toISOString()
+    )
+  })
+
+  it('CDATA로 감싸고 요일이 빠진 비표준 날짜(국민일보 실측)도 정상 파싱한다', async () => {
+    // 22일차 실측: 국민일보는 <pubDate>를 <![CDATA[...]]>로 감싸고 요일 없이 "9 Aug  2026
+    // 16:07:00 GMT"(달 뒤 이중 공백)를 준다. extractRawText의 CDATA 처리와 new Date()의
+    // 관대한 파싱이 이미 정확히 동작하므로, 회귀를 막는 고정 테스트로만 남긴다.
+    const xml = `<rss><channel><item>
+        <title>t</title><link>https://example.com/1</link>
+        <description>d</description>
+        <pubDate><![CDATA[9 Aug  2026 16:07:00 GMT]]></pubDate>
+      </item></channel></rss>`
+    stubFetch(respond(xml, 'application/xml'))
+
+    const result = await fetchFeed('https://example.com/feed.xml')
+
+    assertOk(result)
+    expect(result.items[0].publishedAt).toBe('2026-08-09T16:07:00.000Z')
+  })
+
   it('발행일 파싱에 실패해도 예외 대신 undefined로 흘린다', async () => {
     const xml = `<rss><channel><item>
         <title>t</title><link>https://example.com/1</link>

@@ -72,6 +72,9 @@ export async function GET(
       content: article.content,
       contentSource: article.contentSource,
       crawledAt: article.crawledAt,
+      // 기사 발행 시각(RSS pubDate). 값이 없으면 null — "발행 시각 미상"이며, 크롤 시각으로
+      // 대신 채우지 않는다(lib/types/article.ts의 publishedAt 주석).
+      publishedAt: article.publishedAt ?? null,
       // 크롤 시점 카테고리 스냅샷(Task 026/027). 값이 없으면 null — "카테고리 미상"이다.
       category: article.category ?? null,
     })

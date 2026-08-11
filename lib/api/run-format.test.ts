@@ -7,6 +7,7 @@ import {
   formatLocalDateTimeSecond,
   formatLocalTime,
   formatLocalTimeOnly,
+  formatPublishedTimeLabel,
 } from './run-format'
 
 describe('formatLocalDateTimeMinute', () => {
@@ -56,6 +57,34 @@ describe('formatDurationLabel', () => {
   it('0초 소요도 "0분 0초"로 정상 표시한다', () => {
     const iso = new Date(2026, 7, 10, 14, 32, 5).toISOString()
     expect(formatDurationLabel(iso, iso)).toBe('0분 0초')
+  })
+})
+
+describe('formatPublishedTimeLabel', () => {
+  const crawledAt = new Date(2026, 7, 11, 10, 26, 0).toISOString()
+
+  it('수집일과 같은 날이면 시:분만 보여준다', () => {
+    const publishedAt = new Date(2026, 7, 11, 9, 58, 30).toISOString()
+    expect(formatPublishedTimeLabel(publishedAt, crawledAt)).toBe('09:58')
+  })
+
+  // 피드에 남아 있던 전날 기사를 시:분만으로 보여주면 오늘 그 시각에 나온 것처럼 읽힌다.
+  // 목록의 시각 열은 좁아 항상 날짜를 붙일 수 없으므로 다를 때만 붙인다.
+  it('수집일과 다른 날이면 월-일을 함께 보여준다', () => {
+    const publishedAt = new Date(2026, 7, 10, 22, 5, 0).toISOString()
+    expect(formatPublishedTimeLabel(publishedAt, crawledAt)).toBe('08-10 22:05')
+  })
+
+  it('해가 바뀌어도 날짜가 다르면 월-일을 붙인다', () => {
+    const newYearCrawl = new Date(2026, 0, 1, 0, 30, 0).toISOString()
+    const publishedAt = new Date(2025, 11, 31, 23, 50, 0).toISOString()
+    expect(formatPublishedTimeLabel(publishedAt, newYearCrawl)).toBe('12-31 23:50')
+  })
+
+  // 값이 없을 때 수집 시각으로 대신 채우거나 "-"를 지어내지 않는다 — 화면이 "미상"으로 밝힌다.
+  it('발행 시각이 없거나 깨졌으면 null이다', () => {
+    expect(formatPublishedTimeLabel(null, crawledAt)).toBeNull()
+    expect(formatPublishedTimeLabel('알 수 없음', crawledAt)).toBeNull()
   })
 })
 

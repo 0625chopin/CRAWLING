@@ -199,7 +199,11 @@ export default function CollectResultPage() {
               components/results/{article-file-list,article-preview}.tsx). 선택 상태
               (selectedArticleId)와 카테고리 필터(Task 028)는 두 컴포넌트/요약 카드가 공유해야
               하므로 이 페이지가 쥐고 내려준다. */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr] lg:items-start">
+          {/* 왼쪽 목록 컬럼은 360px에서 460px로 넓혔다 — 360px에서는 표(파일명·언론사·제목·시각)가
+              472px이라 마지막 시각 열이 `overflow-x-auto` 뒤로 통째로 숨어 화면에서 시각을 볼 수
+              없었다. 열 폭 고정(`table-fixed`, article-file-list.tsx)과 함께여야 잘림이 사라지고,
+              제목 열에도 읽을 만한 폭(약 140px)이 남는다. */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[460px_1fr] lg:items-start">
             <ArticleFileList
               runId={selectedRunId}
               selectedArticleId={selectedArticleId}

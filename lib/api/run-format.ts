@@ -93,6 +93,38 @@ export function formatLocalTime(iso: string): string {
   return `${hh}:${mi}:${ss}`
 }
 
+/**
+ * 기사 **발행 시각** 라벨. 값이 없으면(발행 시각 미상, `Article.publishedAt` 주석) null이다 —
+ * 화면이 "미상"으로 그릴지 행을 감출지 스스로 정한다. 여기서 "-"나 빈 문자열을 지어내지 않는다.
+ *
+ * `reference`(대개 같은 기사의 `crawledAt`)와 **로컬 날짜가 같으면 `HH:mm`, 다르면 `MM-DD HH:mm`**
+ * 이다. RSS 피드에는 전날 이전 기사가 섞여 오는데(`OTHER_DATE_SLOT` 참고) 시:분만 보여주면
+ * 어제 22시 기사가 오늘 22시로 읽힌다 — 목록의 시각 열은 좁아서 항상 날짜를 붙일 수는 없으므로,
+ * **날짜가 다를 때만** 붙여 그 경우를 눈에 띄게 한다. 날짜 포맷은 틀려도 화면이 멀쩡해 보이는
+ * 종류라 vitest 회귀 대상이다(docs/CONVENTIONS.md §9).
+ */
+export function formatPublishedTimeLabel(
+  publishedAt: string | null,
+  reference: string
+): string | null {
+  if (!publishedAt) return null
+
+  const published = new Date(publishedAt)
+  if (Number.isNaN(published.getTime())) return null
+
+  const hhmm = `${pad(published.getHours())}:${pad(published.getMinutes())}`
+
+  const referenceDate = new Date(reference)
+  const sameLocalDate =
+    !Number.isNaN(referenceDate.getTime()) &&
+    published.getFullYear() === referenceDate.getFullYear() &&
+    published.getMonth() === referenceDate.getMonth() &&
+    published.getDate() === referenceDate.getDate()
+
+  if (sameLocalDate) return hhmm
+  return `${pad(published.getMonth() + 1)}-${pad(published.getDate())} ${hhmm}`
+}
+
 export interface RunListLabelInput {
   startedAt: string
   targetPressCount: number

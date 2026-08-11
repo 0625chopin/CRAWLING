@@ -13,7 +13,11 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { fetchArticleDetail, type ArticleFileDetail } from '@/lib/api/run-client'
-import { formatLocalDateTimeSecond, formatLocalTime } from '@/lib/api/run-format'
+import {
+  formatLocalDateTimeMinute,
+  formatLocalDateTimeSecond,
+  formatLocalTime,
+} from '@/lib/api/run-format'
 
 export interface ArticlePreviewProps {
   runId: string | null
@@ -168,6 +172,15 @@ export function ArticlePreview({ runId, articleId, query }: ArticlePreviewProps)
             {article.pressDeleted ? '삭제된 언론사' : article.pressName}
           </Badge>
           <Badge variant="secondary">{CONTENT_SOURCE_LABEL[article.contentSource]}</Badge>
+          {/* 발행 시각은 목록과 달리 **항상 날짜까지** 보여준다 — 미리보기는 폭에 여유가 있고,
+              피드에 남아 있던 전날 기사인지가 여기서 바로 보여야 한다. 값이 없으면 「발행 시각
+              미상」으로 밝힌다: 수집 시각으로 대신 채우면 둘을 구분할 수 없다
+              (`lib/types/article.ts`의 publishedAt 주석). */}
+          <span className={article.publishedAt ? 'text-foreground' : undefined}>
+            {article.publishedAt
+              ? `${formatLocalDateTimeMinute(article.publishedAt)} 발행`
+              : '발행 시각 미상'}
+          </span>
           <span>
             <span className="hidden sm:inline">
               {formatLocalDateTimeSecond(article.crawledAt)}

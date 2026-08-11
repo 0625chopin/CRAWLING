@@ -43,6 +43,35 @@ describe('aggregateKeywords — 조사 변형 합산 (DoD ①)', () => {
   })
 })
 
+describe('aggregateKeywords — count는 "언급 기사 수"다', () => {
+  // 이 프로젝트가 vitest 대상으로 못박은 부류다(CONVENTIONS §9 "틀려도 화면이 멀쩡해 보이는
+  // 로직") — 총 등장 횟수와 언급 기사 수는 똑같이 생긴 정수라, 기준이 되돌아가도 화면은 숫자만
+  // 커질 뿐 아무 이상이 없어 보인다. 실제로 그 상태에서 전문 수집 기사 2건이 "vLLM 96회"를
+  // 만들어 랭킹 7위를 차지했다(aggregate.ts 주석의 실측).
+  it('한 기사 안에서 같은 키워드가 여러 번 나와도 1로 센다', async () => {
+    const repeated =
+      '삼성전자가 신제품을 공개했다. 삼성전자는 다음 달 출시한다고 밝혔다. 삼성전자의 목표는 점유율 확대다.'
+
+    const { items } = await aggregateKeywords('run-dedupe', [repeated], new Set())
+
+    expect(items.find((item) => item.keyword === '삼성전자')?.count).toBe(1)
+  })
+
+  it('서로 다른 기사에 나오면 기사 수만큼 센다', async () => {
+    const { items } = await aggregateKeywords(
+      'run-dedupe-multi',
+      [
+        '삼성전자가 신제품을 공개했다. 삼성전자는 다음 달 출시한다.',
+        '삼성전자의 실적이 개선됐다.',
+        '오픈AI가 새 모델을 발표했다.',
+      ],
+      new Set()
+    )
+
+    expect(items.find((item) => item.keyword === '삼성전자')?.count).toBe(2)
+  })
+})
+
 describe('aggregateKeywords — 기본 불용어 제외 (DoD ②)', () => {
   it('기본 불용어 7건이 결과에서 빠지고 stopwordExcludedCount가 0보다 크다', async () => {
     const article =

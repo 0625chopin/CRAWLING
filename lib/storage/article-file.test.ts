@@ -128,6 +128,28 @@ describe('serializeArticle → parseArticle 왕복', () => {
     expect(parsed.category).toBeUndefined()
     expect(legacyText).not.toContain('# category:')
   })
+
+  // 발행 시각은 시간대별 집계(lib/keyword/daily-keywords.ts)가 기사를 구간에 배치하는 유일한
+  // 기준이라, 왕복에서 사라지면 그 기사들이 통째로 "시각 미상"으로 빠진다 — 화면은 멀쩡히
+  // 그려지고 구간만 비어 보인다.
+  it('publishedAt이 있으면 메타 라인에 실려 왕복 후에도 보존된다', () => {
+    const article: Article = { ...baseArticle, publishedAt: '2026-08-11T05:12:00.000Z' }
+
+    const { text, parsed } = roundTrip(article)
+
+    expect(parsed.publishedAt).toBe('2026-08-11T05:12:00.000Z')
+    expect(text).toContain('# publishedAt: 2026-08-11T05:12:00.000Z')
+  })
+
+  // 이 필드가 생기기 전에 수집된 기사와 HTML 목록 수집 경로(발행 시각을 알 수 없다)가 여기 해당한다.
+  it('publishedAt 메타 라인이 없는 기존 기사 txt도 그대로 읽힌다', () => {
+    const legacyText = serializeArticle(baseArticle)
+
+    const parsed = parseArticle(legacyText, { runId: baseArticle.runId, articleId: baseArticle.id })
+
+    expect(parsed.publishedAt).toBeUndefined()
+    expect(legacyText).not.toContain('# publishedAt:')
+  })
 })
 
 describe('parseArticle — 손상된 파일 방어(docs/CONVENTIONS.md §7)', () => {

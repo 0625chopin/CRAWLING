@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Info, Newspaper, Plus } from 'lucide-react'
 
+import { usePressTabField } from '@/components/app-state-provider'
 import { CategoryFilter } from '@/components/common/category-filter'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { EmptyState } from '@/components/common/empty-state'
@@ -17,20 +18,27 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { fetchPressList, type PressSourceWithUrl } from '@/lib/api/press-client'
-import type { PressCategory } from '@/lib/types/press'
 
 type LoadState = 'loading' | 'error' | 'ready'
 
 /** mode="create"면 press가 없고, mode="edit"면 대상 언론사를 들고 있다. */
 type FormDialogState = { mode: 'create' } | { mode: 'edit'; press: PressSourceWithUrl } | null
 
+const EMPTY_PRESS_LIST: PressSourceWithUrl[] = []
+
 export default function PressManagePage() {
-  const [pressList, setPressList] = useState<PressSourceWithUrl[]>([])
-  const [state, setState] = useState<LoadState>('loading')
+  // 탭을 옮겼다 돌아와도 목록 스냅샷·카테고리 필터가 그대로 남아 있어야 한다(Task 031). 이
+  // 페이지에는 렌더 도중 값을 되돌리는 로직이 없어 컨텍스트에 직접 바인딩해도 안전하다
+  // (app/page.tsx와 같은 근거).
+  const [pressListSnapshot, setPressList] = usePressTabField('pressList')
+  const [categories, setCategories] = usePressTabField('categories')
+  const pressList = pressListSnapshot ?? EMPTY_PRESS_LIST
+  // 이전 방문의 스냅샷이 있으면 스켈레톤 없이 그대로 그리고 뒤에서 재조회한다(stale-while-revalidate).
+  const [state, setState] = useState<LoadState>(() =>
+    pressListSnapshot !== null ? 'ready' : 'loading'
+  )
   // 재조회 트리거 — "다시 시도" 버튼은 이 값을 바꿔 아래 이펙트를 다시 돌리는 방식으로 재조회한다.
   const [reloadToken, setReloadToken] = useState(0)
-  // 카테고리 목록 필터(Task 028). 빈 배열 = 전체 — GET /api/press의 category 쿼리와 같은 규칙이다.
-  const [categories, setCategories] = useState<PressCategory[]>([])
 
   const [formDialogState, setFormDialogState] = useState<FormDialogState>(null)
   // PressFormDialog에 매번 새 key를 주기 위한 카운터. 다이얼로그를 열 때마다 증가시켜
@@ -46,8 +54,12 @@ export default function PressManagePage() {
         setPressList(data)
         setState('ready')
       })
-      .catch(() => setState('error'))
-  }, [reloadToken, categories])
+      .catch(() => {
+        // 캐시된 목록이 있으면 화면은 그대로 두고 실패를 조용히 흘린다 — 재조회 실패로 방금까지
+        // 보이던 좋은 데이터를 지우지 않는다(Task 031 stale-while-revalidate, app/page.tsx와 같은 패턴).
+        setState((prev) => (prev === 'ready' ? 'ready' : 'error'))
+      })
+  }, [reloadToken, categories, setPressList])
 
   const retry = useCallback(() => {
     setState('loading')
@@ -69,22 +81,30 @@ export default function PressManagePage() {
     []
   )
 
-  const handleActiveChanged = useCallback((updated: PressSourceWithUrl) => {
-    setPressList((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
-  }, [])
+  const handleActiveChanged = useCallback(
+    (updated: PressSourceWithUrl) => {
+      setPressList((prev) => (prev ?? []).map((item) => (item.id === updated.id ? updated : item)))
+    },
+    [setPressList]
+  )
 
-  const handleSaved = useCallback((saved: PressSourceWithUrl) => {
-    setPressList((prev) => {
-      const exists = prev.some((item) => item.id === saved.id)
-      return exists
-        ? prev.map((item) => (item.id === saved.id ? saved : item))
-        : [...prev, saved]
-    })
-  }, [])
+  const handleSaved = useCallback(
+    (saved: PressSourceWithUrl) => {
+      setPressList((prev) => {
+        const list = prev ?? []
+        const exists = list.some((item) => item.id === saved.id)
+        return exists ? list.map((item) => (item.id === saved.id ? saved : item)) : [...list, saved]
+      })
+    },
+    [setPressList]
+  )
 
-  const handleDeleted = useCallback((deleted: PressSourceWithUrl) => {
-    setPressList((prev) => prev.filter((item) => item.id !== deleted.id))
-  }, [])
+  const handleDeleted = useCallback(
+    (deleted: PressSourceWithUrl) => {
+      setPressList((prev) => (prev ?? []).filter((item) => item.id !== deleted.id))
+    },
+    [setPressList]
+  )
 
   return (
     // <main>·컨테이너·Breadcrumb·h1을 손으로 다시 그리지 않는다.

@@ -3,8 +3,12 @@ import { CircleCheckBig, CircleDashed, LoaderCircle } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 
 export interface AnalysisProgressProps {
-  /** 분석 대상 기사 수(선택된 run의 성공 수집 건수) — 진행 문구에만 쓴다. */
-  articleCount: number
+  /**
+   * 분석 대상 기사 수 — 진행 문구에만 쓴다. **처음 분석하는 날짜에는 알 수 없다**(그 수를 세려면
+   * 하루치 기사 메타를 먼저 다 읽어야 하는데, 그게 바로 이 화면이 기다리고 있는 작업이다).
+   * 그럴 때는 생략하고, 없는 숫자를 0으로 채워 "0건을 분석 중"이라고 말하지 않는다.
+   */
+  articleCount?: number
 }
 
 /**
@@ -26,7 +30,11 @@ export function AnalysisProgress({ articleCount }: AnalysisProgressProps) {
       <CardContent className="space-y-4 py-6">
         <div className="flex items-center gap-2">
           <LoaderCircle className="animate-spin text-muted-foreground" aria-hidden="true" />
-          <p className="text-sm font-medium">{articleCount}건의 기사를 분석하고 있습니다…</p>
+          <p className="text-sm font-medium">
+            {articleCount === undefined
+              ? '기사를 분석하고 있습니다…'
+              : `${articleCount}건의 기사를 분석하고 있습니다…`}
+          </p>
         </div>
         <div className="h-1 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
           <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />

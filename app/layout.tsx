@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 
+import { AppStateProvider } from '@/components/app-state-provider'
 import { SiteHeader } from '@/components/layout/site-header'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
@@ -33,9 +34,13 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
     >
       <body className="flex min-h-full flex-col">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <SiteHeader />
-          {children}
-          <Toaster position="bottom-right" richColors closeButton />
+          {/* 라우트가 바뀌어도 이 레이아웃은 다시 마운트되지 않는다 — 탭 전환에도 살아남아야
+              하는 화면 상태(Task 031)를 여기, ThemeProvider 안쪽에 둔다. */}
+          <AppStateProvider>
+            <SiteHeader />
+            {children}
+            <Toaster position="bottom-right" richColors closeButton />
+          </AppStateProvider>
         </ThemeProvider>
       </body>
     </html>

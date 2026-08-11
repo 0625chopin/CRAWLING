@@ -22,6 +22,21 @@ export const articleSchema = z.object({
   contentSource: contentSourceSchema,
   crawledAt: z.iso.datetime({ offset: true }),
   /**
+   * 기사 발행 시각(RSS `pubDate`/`dc:date`/Atom `updated`를 `lib/crawler/rss.ts`가 파싱한 값).
+   * 시간대별 집계(`lib/keyword/daily-keywords.ts`)가 기사를 구간에 배치하는 유일한 기준이다.
+   *
+   * **`crawledAt`으로 대신하지 않는다.** 한 실행의 기사는 크롤 시각이 전부 같아서 그 값으로
+   * 구간을 나누면 "실행 하나 = 구간 하나"가 되어 시간대 비교가 성립하지 않는다. 실측으로도
+   * 10:26에 돈 실행 한 건 안에 07~10시 발행 기사가 섞여 있다.
+   *
+   * **기본값을 두지 않는다** — `category`와 같은 이유다. 값이 없는 것("발행 시각 미상")과 특정
+   * 시각인 것은 다른 사실이고, 미상을 임의의 구간으로 접으면 그 구간이 오염된다. HTML 목록
+   * 수집 경로는 발행 시각을 알 수 없어 항상 값이 없고, 이 필드가 생기기 전에 수집된 기사도
+   * 마찬가지다 — 소비자는 `undefined`를 "시간대 분석 대상 아님"으로 다루고 그 건수를 화면에
+   * 밝힌다(`resolveTimeSlotIndex`).
+   */
+  publishedAt: z.iso.datetime({ offset: true }).optional(),
+  /**
    * 크롤 시점 언론사 카테고리 스냅샷(Task 026). 필드는 저장소 계층이 마련하고, 실제 값은 크롤
    * 파이프라인(Task 027)이 크롤 당시 `Press.category`를 옮겨 적어 채운다 — Press의 카테고리가
    * 나중에 바뀌어도 이미 수집된 기사가 속했던 카테고리는 그대로 남아야 하기 때문이다(D-026이

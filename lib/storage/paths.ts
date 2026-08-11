@@ -78,6 +78,20 @@ export function keywordsPath(runId: string): string {
 }
 
 /**
+ * 날짜 단위 시간대별 키워드 집계 캐시. `data/runs/` 밑이 아니라 별도 폴더에 두는 이유는 이
+ * 파일이 **여러 run을 합친 산출물**이라 어느 run에도 속하지 않기 때문이다 — run 폴더 안에 두면
+ * 그 run을 지웠을 때 다른 run의 집계까지 함께 사라진다.
+ */
+export function dailyKeywordsDir(): string {
+  return path.join(DATA_ROOT, 'daily-keywords')
+}
+
+/** `dateKey`는 `YYYYMMDD` 8자리다(`lib/types/time-slot.ts`의 `dateKeySchema`). */
+export function dailyKeywordsPath(dateKey: string): string {
+  return path.join(dailyKeywordsDir(), `${assertSafeSegment(dateKey, 'date')}.json`)
+}
+
+/**
  * 절대경로를 프로젝트 루트(`process.cwd()`) 기준 상대경로로 바꾼다. 화면 설계서 02(§실행
  * 요약 카드 "저장 경로")는 `data/runs/{runId}/articles/`처럼 항상 슬래시 구분 상대경로를
  * 기대하는데, `path.relative`는 Windows에서 `\`를 돌려준다. 정규화를 빠뜨리면 화면에

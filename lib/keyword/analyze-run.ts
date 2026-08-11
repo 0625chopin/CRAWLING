@@ -3,7 +3,12 @@ import 'server-only'
 import { matchesCategoryFilter } from '@/lib/api/article-category-filter'
 import { listArticles, readArticle } from '@/lib/storage/article-repository'
 import type { KeywordsFile } from '@/lib/storage/keyword-repository'
-import { hasKeywords, readKeywords, writeKeywords } from '@/lib/storage/keyword-repository'
+import {
+  CURRENT_COUNT_BASIS,
+  hasKeywords,
+  readKeywords,
+  writeKeywords,
+} from '@/lib/storage/keyword-repository'
 import { getRun } from '@/lib/storage/run-repository'
 import { getStopwordSet } from '@/lib/storage/stopword-repository'
 import type { PressCategory } from '@/lib/types/press'
@@ -92,11 +97,16 @@ export async function analyzeRun(
 
   if (!categoryFilterActive && !options.force && (await hasKeywords(runId))) {
     const cached = await readKeywords(runId)
-    return {
-      file: cached,
-      skippedArticleCount: 0,
-      uncategorizedCount: 0,
-      sourceArticleCount: cached.summary.articleCount,
+    // countBasis가 없거나 다른 파일은 **옛 기준(총 등장 횟수)으로 집계된 캐시**다 — 숫자 모양이
+    // 같아서 그대로 쓰면 랭킹이 조용히 틀린다(keyword-repository.ts의 countBasis 주석).
+    // 캐시 미스와 똑같이 처리해 아래에서 다시 집계하고 덮어쓴다.
+    if (cached.countBasis === CURRENT_COUNT_BASIS) {
+      return {
+        file: cached,
+        skippedArticleCount: 0,
+        uncategorizedCount: 0,
+        sourceArticleCount: cached.summary.articleCount,
+      }
     }
   }
 
@@ -136,6 +146,7 @@ export async function analyzeRun(
   const file: KeywordsFile = {
     runId,
     analyzedAt: new Date().toISOString(),
+    countBasis: CURRENT_COUNT_BASIS,
     summary,
     items,
   }

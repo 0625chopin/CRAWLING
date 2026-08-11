@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 import { fetchRunArticles, type ArticleFileEntry } from '@/lib/api/run-client'
-import { formatLocalTimeOnly } from '@/lib/api/run-format'
+import { formatLocalTimeOnly, formatPublishedTimeLabel } from '@/lib/api/run-format'
 import type { PressCategory } from '@/lib/types/press'
 
 export interface ArticleFileListProps {
@@ -46,6 +46,28 @@ type LoadState = 'loading' | 'error' | 'ready'
 // (ROADMAP Task 018 구현 규칙 — 클라이언트에서 다시 필터링하지 않는다) 타이핑마다 fetch가
 // 나가면 값이 늦게 도착한 응답이 최신 응답을 덮어쓸 여지가 생긴다.
 const SEARCH_DEBOUNCE_MS = 300
+
+/**
+ * 「발행 09:58 / 수집 10:26」 두 줄을 함께 그린다. 두 시각을 각각 열로 두면 표가 왼쪽 컬럼
+ * (360px)을 넘어 가로 스크롤 뒤로 숨는데, 실제로 그 상태였다 — 표가 472px이라 「수집 시각」 열
+ * 71px이 통째로 잘려 화면에서 시각을 아예 볼 수 없었다. 한 셀에 쌓으면 열을 늘리지 않고 정보만
+ * 하나 더 얹을 수 있다.
+ *
+ * 발행 시각이 없는 기사는 「미상」이다 — 수집 시각을 대신 보여주면 둘을 구분할 수 없게 된다
+ * (`lib/types/article.ts`의 publishedAt 주석과 같은 원칙).
+ */
+function ArticleTimeLines({ article }: { article: ArticleFileEntry }) {
+  const published = formatPublishedTimeLabel(article.publishedAt, article.crawledAt)
+
+  return (
+    <div className="text-xs leading-tight text-muted-foreground">
+      <div className={published === null ? undefined : 'text-foreground'}>
+        발행 {published ?? '미상'}
+      </div>
+      <div>수집 {formatLocalTimeOnly(article.crawledAt)}</div>
+    </div>
+  )
+}
 
 /**
  * ④ 기사 파일 목록(`docs/screens/02-collect-result.md` §영역별 컴포넌트 명세 ④).
@@ -212,13 +234,22 @@ export function ArticleFileList({
                 길어져도 계속 보인다. */}
             <div className="hidden lg:block">
               <div>
-                <Table>
+                {/* `table-fixed` + 열 폭 고정 — 자동 폭에 맡기면 제목·언론사가 내용만큼 늘어나
+                    표가 카드(360px)를 넘고, 넘친 부분은 `Table`이 감싸는 `overflow-x-auto`
+                    컨테이너 뒤로 숨는다. 실제로 표가 472px이라 마지막 시각 열이 통째로 가려져
+                    있었다 — 세로 중첩 스크롤을 걷어낸 I-059와 같은 함정이 가로로 재현된 것이다. */}
+                <Table className="table-fixed">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>파일명</TableHead>
-                      <TableHead>언론사</TableHead>
+                      {/* `0001.txt`는 mono text-xs로 약 58px이다 — w-16(64px, 안쪽 여백 16px 제외
+                          48px)이면 글자가 잘리고, 잘린 폭이 컨테이너 scrollWidth에 남아 10px짜리
+                          가로 스크롤바가 생긴다. 잘리지 않는 폭을 준다. */}
+                      <TableHead className="w-20">파일명</TableHead>
+                      <TableHead className="w-24">언론사</TableHead>
                       <TableHead>제목</TableHead>
-                      <TableHead>수집 시각</TableHead>
+                      {/* 가장 긴 값은 날짜가 붙는 「발행 08-10 19:38」(약 85px + 안쪽 여백 16px)이다
+                          — w-24(96px)면 그 행만 넘쳐 표 전체에 가로 스크롤바가 생긴다. */}
+                      <TableHead className="w-28">시각</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -238,19 +269,29 @@ export function ArticleFileList({
                             }
                           }}
                         >
+                          {/* 잘라내기는 `td`가 아니라 안쪽 블록에 건다 — `td`에 직접 걸면 눈에는
+                              잘려 보여도 넘친 폭이 컨테이너의 scrollWidth에 그대로 남아 가로
+                              스크롤바가 생긴다(실측 11px). */}
                           <TableCell className="font-mono text-xs">
-                            {article.fileName}
+                            <div className="truncate">{article.fileName}</div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant={article.pressDeleted ? 'outline' : 'secondary'}>
+                            {/* Badge는 이미 overflow-hidden이라 max-w-full만 주면 잘린다.
+                                고정 폭 열 안에서 언론사명이 길어도 옆 열을 밀지 않는다. */}
+                            <Badge
+                              variant={article.pressDeleted ? 'outline' : 'secondary'}
+                              className="max-w-full"
+                            >
                               {article.pressDeleted ? '삭제된 언론사' : article.pressName}
                             </Badge>
                           </TableCell>
-                          <TableCell className="max-w-48 truncate">
-                            <HighlightedText text={article.title} query={query} />
+                          <TableCell>
+                            <div className="truncate">
+                              <HighlightedText text={article.title} query={query} />
+                            </div>
                           </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {formatLocalTimeOnly(article.crawledAt)}
+                          <TableCell>
+                            <ArticleTimeLines article={article} />
                           </TableCell>
                         </TableRow>
                       )
@@ -272,6 +313,11 @@ export function ArticleFileList({
                 >
                   {items.map((article) => {
                     const isSelected = article.id === selectedArticleId
+                    // 모바일은 한 줄에 나란히 놓을 수 있어 표(두 줄 쌓기)와 배치가 다르다.
+                    const publishedLabel = formatPublishedTimeLabel(
+                      article.publishedAt,
+                      article.crawledAt
+                    )
                     return (
                       <li key={article.id} role="option" aria-selected={isSelected}>
                         <button
@@ -293,9 +339,12 @@ export function ArticleFileList({
                           <p className="mt-1 truncate font-medium">
                             <HighlightedText text={article.title} query={query} />
                           </p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            {formatLocalTimeOnly(article.crawledAt)}
-                          </p>
+                          <div className="mt-0.5 flex gap-3 text-xs text-muted-foreground">
+                            <span className={publishedLabel === null ? undefined : 'text-foreground'}>
+                              발행 {publishedLabel ?? '미상'}
+                            </span>
+                            <span>수집 {formatLocalTimeOnly(article.crawledAt)}</span>
+                          </div>
                         </button>
                       </li>
                     )

@@ -24,9 +24,9 @@ function sanitizeMetaValue(value: string): string {
  * 여기서 다시 접으면 화면 미리보기(docs/screens/02-collect-result.md ⑤ "본문 개행 보존 전제")가
  * 깨진다.
  *
- * `category`(Task 027)는 **있을 때만** 마지막 줄로 얹는다 — 항상 쓰면 카테고리 줄이 없는 과거
- * 기사 txt와 지금 만드는 파일의 모양이 달라져 "없으면 undefined로 흘린다"는 하위호환 전제가
- * 애초에 검증되지 않는다. 없는 경우(카테고리 미상)는 그냥 줄 자체를 만들지 않는다.
+ * `publishedAt`(발행 시각)·`category`(Task 027)는 **있을 때만** 뒤에 얹는다 — 항상 쓰면 그 줄이
+ * 없는 과거 기사 txt와 지금 만드는 파일의 모양이 달라져 "없으면 undefined로 흘린다"는 하위호환
+ * 전제가 애초에 검증되지 않는다. 없는 경우(발행 시각 미상·카테고리 미상)는 줄 자체를 만들지 않는다.
  */
 export function serializeArticle(article: Article): string {
   const metaLines = [
@@ -38,6 +38,9 @@ export function serializeArticle(article: Article): string {
     `# contentSource: ${article.contentSource}`,
     `# crawledAt: ${article.crawledAt}`,
   ]
+  if (article.publishedAt !== undefined) {
+    metaLines.push(`# publishedAt: ${article.publishedAt}`)
+  }
   if (article.category !== undefined) {
     metaLines.push(`# category: ${article.category}`)
   }

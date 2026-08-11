@@ -80,6 +80,13 @@ export interface ArticleFileEntry {
   contentSource: ContentSource
   crawledAt: string
   /**
+   * 기사 발행 시각(RSS `pubDate`). **`crawledAt`과 다른 값이다** — 크롤 시각은 한 실행의 기사가
+   * 전부 같지만 발행 시각은 기사마다 다르고, 전날 이전에 나온 기사도 피드에 섞여 온다.
+   * 값이 없으면 `null`("발행 시각 미상") — HTML 목록 수집 경로와 이 필드가 생기기 전에 수집된
+   * 기사가 여기 해당한다.
+   */
+  publishedAt: string | null
+  /**
    * 크롤 시점 카테고리 스냅샷(Task 026). 값의 실제 원천은 크롤 파이프라인(Task 027)이라 지금
    * 저장된 기사는 전부 `null`이다 — "카테고리 미상"이지 "IT/AI"가 아니다.
    */
@@ -100,6 +107,8 @@ export interface ArticleFileDetail {
   content: string
   contentSource: ContentSource
   crawledAt: string
+  /** ArticleFileEntry.publishedAt과 같은 계약 — 값이 없으면 "발행 시각 미상". */
+  publishedAt: string | null
   /** ArticleFileEntry.category와 같은 계약(Task 026) — 값이 없으면 "카테고리 미상". */
   category: PressCategory | null
 }

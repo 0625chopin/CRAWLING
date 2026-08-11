@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Ban, RefreshCw, Search, SearchX } from 'lucide-react'
 
+import { useStopwordsTabField } from '@/components/app-state-provider'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { PageContainer } from '@/components/common/page-container'
 import { PageHeader } from '@/components/common/page-header'
@@ -19,15 +20,22 @@ import type { Stopword } from '@/lib/types/stopword'
 
 type LoadState = 'loading' | 'error' | 'ready'
 
+const EMPTY_STOPWORDS: Stopword[] = []
+
 export default function StopwordsPage() {
-  const [stopwords, setStopwords] = useState<Stopword[]>([])
-  const [state, setState] = useState<LoadState>('loading')
+  // 탭을 옮겼다 돌아와도 목록 스냅샷·검색어가 그대로 남아 있어야 한다(Task 031). 이 페이지에는
+  // 렌더 도중 값을 되돌리는 로직이 없어 컨텍스트에 직접 바인딩해도 안전하다(app/page.tsx와 같은 근거).
+  const [stopwordsSnapshot, setStopwords] = useStopwordsTabField('stopwords')
+  const [searchQuery, setSearchQuery] = useStopwordsTabField('query')
+  const stopwords = stopwordsSnapshot ?? EMPTY_STOPWORDS
+  // 이전 방문의 스냅샷이 있으면 스켈레톤 없이 그대로 그리고 뒤에서 재조회한다(stale-while-revalidate).
+  const [state, setState] = useState<LoadState>(() =>
+    stopwordsSnapshot !== null ? 'ready' : 'loading'
+  )
   // 재조회 트리거 — "다시 시도" 버튼은 이 값을 바꿔 아래 이펙트를 다시 돌리는 방식으로 재조회한다.
   const [reloadToken, setReloadToken] = useState(0)
   // 삭제 결과를 알리는 라이브 리전. 칩 삭제는 두 섹션에 걸쳐 있어 상태를 이 페이지가 들고 있는다.
   const [liveMessage, setLiveMessage] = useState('')
-  // 검색어 — 012B 몫(page.tsx 골격은 012A가 만들었지만 이 입력의 필터링 로직은 012B가 채운다).
-  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     fetchStopwords()
@@ -35,22 +43,31 @@ export default function StopwordsPage() {
         setStopwords(data)
         setState('ready')
       })
-      .catch(() => setState('error'))
-  }, [reloadToken])
+      .catch(() => {
+        // 캐시된 목록이 있으면 화면은 그대로 두고 실패를 조용히 흘린다(Task 031 stale-while-revalidate).
+        setState((prev) => (prev === 'ready' ? 'ready' : 'error'))
+      })
+  }, [reloadToken, setStopwords])
 
   const retry = useCallback(() => {
     setState('loading')
     setReloadToken((token) => token + 1)
   }, [])
 
-  const handleDeleted = useCallback((deleted: Stopword) => {
-    setStopwords((prev) => prev.filter((item) => item.id !== deleted.id))
-    setLiveMessage(`'${deleted.word}' 불용어가 삭제되었습니다`)
-  }, [])
+  const handleDeleted = useCallback(
+    (deleted: Stopword) => {
+      setStopwords((prev) => (prev ?? []).filter((item) => item.id !== deleted.id))
+      setLiveMessage(`'${deleted.word}' 불용어가 삭제되었습니다`)
+    },
+    [setStopwords]
+  )
 
-  const handleAdded = useCallback((added: Stopword[]) => {
-    setStopwords((prev) => [...prev, ...added])
-  }, [])
+  const handleAdded = useCallback(
+    (added: Stopword[]) => {
+      setStopwords((prev) => [...(prev ?? []), ...added])
+    },
+    [setStopwords]
+  )
 
   const defaultStopwords = stopwords.filter((item) => item.isDefault)
   const customStopwords = stopwords.filter((item) => !item.isDefault)

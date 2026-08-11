@@ -1,11 +1,16 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { ArrowRight, Flame, Inbox, SearchX } from 'lucide-react'
 
+import {
+  KEYWORDS_FILTER_DEFAULTS,
+  useKeywordsTabField,
+  useKeywordsTabStateRaw,
+} from '@/components/app-state-provider'
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorAlert } from '@/components/common/error-alert'
 import { PageContainer } from '@/components/common/page-container'
@@ -28,14 +33,13 @@ import type { PressCategory } from '@/lib/types/press'
 type RunsLoadState = 'loading' | 'error' | 'ready'
 type AnalysisStatus = 'idle' | 'loading' | 'success' | 'error'
 
-// 설계서 상태 ① 기본값(docs/screens/03-hot-keyword.md §상태별 화면 ①).
-const DEFAULT_MIN_COUNT = 1
-const DEFAULT_POS: PosTag[] = ['NNG', 'NNP', 'SL']
-const DEFAULT_TOP_N = 50
+// 설계서 상태 ① 기본값(docs/screens/03-hot-keyword.md §상태별 화면 ①). 이 탭의 컨텍스트
+// 초깃값(components/app-state-provider.tsx)과 같은 값이어야 해서 그쪽에서 가져와 별칭만 준다
+// — 두 곳에 같은 숫자를 따로 적으면 한쪽만 고쳤을 때 조용히 어긋난다.
+const { minCount: DEFAULT_MIN_COUNT, posFilter: DEFAULT_POS, topN: DEFAULT_TOP_N } =
+  KEYWORDS_FILTER_DEFAULTS
 
-// selectedRunId가 한 번도 추적되지 않았음을 나타내는 표식(app/results/page.tsx와 같은 패턴).
-// 최초 렌더에서도 "바뀌었다" 분기를 확실히 태워, 필터·분석 결과가 초기화되게 한다.
-const UNSET: unique symbol = Symbol('keywords-run-unset')
+const EMPTY_RUNS: RunListItem[] = []
 
 /** runs·분석 결과가 아직 없는 최초 진입 스켈레톤. useSearchParams의 Suspense fallback도 겸한다. */
 function KeywordsPageSkeleton() {
@@ -58,21 +62,38 @@ function KeywordsPageContent() {
   const searchParams = useSearchParams()
   const [initialRunId] = useState(() => searchParams.get('runId'))
 
-  const [runsLoadState, setRunsLoadState] = useState<RunsLoadState>('loading')
-  const [runs, setRuns] = useState<RunListItem[]>([])
+  // 탭을 옮겼다 돌아와도 실행 선택·필터 4종·분석 결과가 그대로 남아 있어야 한다(Task 031).
+  // runs·selectedRunId는 이벤트 핸들러/이펙트에서만 바뀌므로 컨텍스트에 직접 바인딩해도
+  // 안전하지만, minCount·posFilter·topN·categories·analysisStatus·result는 아래 "run이 바뀌면
+  // 초기화" 블록에서 렌더 도중 갱신된다 — app/results/page.tsx와 같은 이유로 이 값들은 로컬
+  // state로 유지하고 마운트 시 컨텍스트의 마지막 스냅샷으로 초기화한 뒤, 언마운트 시점에만
+  // 다시 컨텍스트에 남긴다(아래 latestSnapshotRef).
+  const [runsSnapshot, setRuns] = useKeywordsTabField('runs')
+  const [selectedRunId, setSelectedRunId] = useKeywordsTabField('selectedRunId')
+  const { state: keywordsTabSnapshot, setState: setKeywordsTab } = useKeywordsTabStateRaw()
+
+  const runs = runsSnapshot ?? EMPTY_RUNS
+  // 이전 방문에서 받아온 스냅샷이 있으면 스켈레톤 없이 그대로 그리고 뒤에서 재조회한다(stale-while-revalidate).
+  const [runsLoadState, setRunsLoadState] = useState<RunsLoadState>(() =>
+    runsSnapshot !== null ? 'ready' : 'loading'
+  )
   const [reloadToken, setReloadToken] = useState(0)
 
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
-  const [trackedRunId, setTrackedRunId] = useState<string | null | typeof UNSET>(UNSET)
+  // trackedRunId의 초깃값을 selectedRunId(컨텍스트에서 이어받은 값)와 똑같이 맞춘다 — 탭 복귀
+  // 직후 첫 렌더에서 "run이 바뀌었다"고 오판해 아래 필터·분석 결과를 곧바로 지우지 않기
+  // 위해서다(app/results/page.tsx와 같은 이유).
+  const [trackedRunId, setTrackedRunId] = useState<string | null>(selectedRunId)
 
-  const [minCount, setMinCount] = useState(DEFAULT_MIN_COUNT)
-  const [posFilter, setPosFilter] = useState<PosTag[]>(DEFAULT_POS)
-  const [topN, setTopN] = useState(DEFAULT_TOP_N)
+  const [minCount, setMinCount] = useState(() => keywordsTabSnapshot.minCount)
+  const [posFilter, setPosFilter] = useState<PosTag[]>(() => keywordsTabSnapshot.posFilter)
+  const [topN, setTopN] = useState(() => keywordsTabSnapshot.topN)
   // 카테고리 필터(Task 028). 빈 배열 = 전체 — fetchKeywords의 categories 옵션과 같은 규칙.
-  const [categories, setCategories] = useState<PressCategory[]>([])
+  const [categories, setCategories] = useState<PressCategory[]>(() => keywordsTabSnapshot.categories)
 
-  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle')
-  const [result, setResult] = useState<KeywordsResult | null>(null)
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>(
+    () => keywordsTabSnapshot.analysisStatus
+  )
+  const [result, setResult] = useState<KeywordsResult | null>(() => keywordsTabSnapshot.result)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [pendingKeyword, setPendingKeyword] = useState<string | null>(null)
 
@@ -81,15 +102,18 @@ function KeywordsPageContent() {
       .then((data) => {
         setRuns(data)
         setRunsLoadState('ready')
-        // 최초 로드에서만 ?runId(존재하는 run일 때만) 또는 최신 실행을 기본 선택한다.
+        // ?runId(수집 결과 화면의 [키워드 분석] 버튼이 넘긴 값, 존재하는 run일 때만)를 가장
+        // 먼저 따른다 — 명시적으로 딴 run을 골라 들어온 것이므로 이전 방문의 선택보다 우선한다.
+        // 그다음은 이전 방문에서 고른 실행(prev, 그 사이 삭제되지 않았을 때만), 마지막이
+        // 최신 실행이다(Task 031 — 복귀 시 낡은 선택을 그대로 믿지 않는다).
         setSelectedRunId((prev) => {
-          if (prev) return prev
           if (initialRunId && data.some((run) => run.id === initialRunId)) return initialRunId
+          if (prev && data.some((run) => run.id === prev)) return prev
           return data[0]?.id ?? null
         })
       })
       .catch(() => setRunsLoadState('error'))
-  }, [reloadToken, initialRunId])
+  }, [reloadToken, initialRunId, setRuns, setSelectedRunId])
 
   const retryRuns = useCallback(() => {
     setRunsLoadState('loading')
@@ -98,7 +122,8 @@ function KeywordsPageContent() {
 
   // run이 바뀌면(최초 선택 포함) 이전 run의 필터·분석 결과가 남지 않도록 렌더 중 즉시
   // 초기화한다(app/results/page.tsx와 같은 근거 — react-hooks/set-state-in-effect 경고를 피하며
-  // "다음 페인트 전에 초기화"를 보장하는 패턴).
+  // "다음 페인트 전에 초기화"를 보장하는 패턴). 이 블록이 만지는 값은 전부 이 컴포넌트가 직접
+  // 소유한 로컬 state뿐이다 — 컨텍스트 state는 여기서 건드리지 않는다(위 주석 참고).
   if (selectedRunId !== trackedRunId) {
     setTrackedRunId(selectedRunId)
     setMinCount(DEFAULT_MIN_COUNT)
@@ -109,6 +134,20 @@ function KeywordsPageContent() {
     setResult(null)
     setAnalysisError(null)
   }
+
+  // 탭을 떠나는 순간(언마운트)의 최신 값을 컨텍스트에 스냅샷으로 남긴다 — 다음 방문 때 이
+  // 값들로 다시 시작하기 위해서다(Task 031). 매 렌더 ref만 갱신해 두고(리렌더 유발 없음) 실제
+  // 쓰기는 언마운트 시 한 번만 한다(app/results/page.tsx와 같은 이유).
+  const latestSnapshotRef = useRef({ minCount, posFilter, topN, categories, analysisStatus, result })
+  useEffect(() => {
+    latestSnapshotRef.current = { minCount, posFilter, topN, categories, analysisStatus, result }
+  })
+  useEffect(() => {
+    return () => {
+      setKeywordsTab((prev) => ({ ...prev, ...latestSnapshotRef.current }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 언마운트 1회에만 스냅샷을 흘려보낸다. setKeywordsTab은 안정적이다.
+  }, [])
 
   const runAnalysis = useCallback(
     async (options: {

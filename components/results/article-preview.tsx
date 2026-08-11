@@ -5,6 +5,7 @@ import { ExternalLink, FileText } from 'lucide-react'
 
 import { EmptyState } from '@/components/common/empty-state'
 import { ErrorAlert } from '@/components/common/error-alert'
+import { HighlightedText } from '@/components/results/highlighted-text'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,6 +18,10 @@ import { formatLocalDateTimeSecond, formatLocalTime } from '@/lib/api/run-format
 export interface ArticlePreviewProps {
   runId: string | null
   articleId: string | null
+  /** 기사 파일 목록 검색 Input의 현재 값(Task 029). 제목·본문에서 이 값과 일치하는 구간을
+   * 노란색으로 칠한다 — article-file-list.tsx와 같은 값을 page.tsx로부터 함께 받아야 화면
+   * 두 곳의 하이라이트가 서로 어긋나지 않는다. */
+  query: string
 }
 
 type LoadState = 'idle' | 'loading' | 'error' | 'ready'
@@ -40,7 +45,7 @@ const CONTENT_SOURCE_LABEL: Record<ArticleFileDetail['contentSource'], string> =
 // 같은 패턴).
 const SELECTION_UNSET: unique symbol = Symbol('article-preview-selection-unset')
 
-export function ArticlePreview({ runId, articleId }: ArticlePreviewProps) {
+export function ArticlePreview({ runId, articleId, query }: ArticlePreviewProps) {
   const [loadState, setLoadState] = useState<LoadState>('idle')
   const [article, setArticle] = useState<ArticleFileDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -138,9 +143,15 @@ export function ArticlePreview({ runId, articleId }: ArticlePreviewProps) {
   if (!article) return null
 
   return (
-    <Card>
+    // 기사 목록이 자체 스크롤을 버리고 페이지 스크롤을 쓰게 되면서(I-059) 목록이 매우 길어질 수
+    // 있다 — 기사 500건이면 수천 픽셀이다. 미리보기가 함께 흘러가 버리면 아래쪽 파일을 고른 뒤
+    // 본문을 보려고 다시 위로 올라가야 한다. sticky로 붙여 목록을 훑는 동안 계속 보이게 한다
+    // (crawl-run-panel.tsx가 같은 이유로 쓰는 lg:sticky lg:top-20과 같은 관용구).
+    <Card className="lg:sticky lg:top-20">
       <CardHeader>
-        <CardTitle className="text-base leading-snug font-medium">{article.title}</CardTitle>
+        <CardTitle className="text-base leading-snug font-medium">
+          <HighlightedText text={article.title} query={query} />
+        </CardTitle>
         <CardAction>
           {/* 언론사 원문(외부 도메인)이므로 raw <a>가 맞다 — next/link로 바꾸지 않는다. */}
           <Button variant="ghost" size="icon" asChild>
@@ -174,7 +185,7 @@ export function ArticlePreview({ runId, articleId }: ArticlePreviewProps) {
             aria-live="polite"
             className="font-mono text-sm leading-relaxed whitespace-pre-wrap"
           >
-            {article.content}
+            <HighlightedText text={article.content} query={query} />
           </div>
         </ScrollArea>
       </CardContent>

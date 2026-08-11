@@ -39,6 +39,8 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-highlight: var(--highlight);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -64,6 +66,11 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
+  /* 검색어 하이라이트(Task 029) — 사용자가 지정한 "노란색"과 §8 하드코딩 색상 금지 규약이
+     부딪혀 토큰으로 새로 둔다. 라이트는 또렷한 노랑 위에 어두운 글자, 다크는 채도를 낮춘
+     골드 톤으로 눈부심을 줄인다(팀장 판정). */
+  --highlight: oklch(0.852 0.199 91.936);
+  --highlight-foreground: oklch(0.145 0 0);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -99,6 +106,11 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  /* L을 0.554 → 0.6으로 올려 대비 4.02:1 → 4.85:1(WCAG AA 4.5:1 통과, 계산 근거는
+     docs/DECISIONS.draft.화면.md)로 고쳤다. 채도(C)·색상(H)은 그대로라 여전히 골드 계열로
+     읽힌다 — 밝기만 살짝 올렸다. */
+  --highlight: oklch(0.6 0.135 66.442);
+  --highlight-foreground: oklch(0.145 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);

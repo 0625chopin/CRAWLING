@@ -63,6 +63,50 @@
 
 ---
 
+## 검색어 하이라이트 · 목록 스크롤 (22일차 신규, Task 029)
+
+`docs/ROADMAP.md`에 없는 신규 요청이다. 사용자가 검색 Input에 입력한 값을 ④ 기사 파일
+목록(제목 열)과 ⑤ 본문 미리보기(제목·본문) 양쪽에서 일치 구간만 노란색으로 강조하고,
+④의 목록이 길 때 마우스 휠·스크롤바 양쪽으로 끝까지 스크롤되게 고쳤다.
+
+- **검색어와 일치하는 구간만 `<mark>`로 감싼다.** `lib/highlight.ts`의 `splitByMatch`가
+  대소문자 무시·정규식 특수문자 이스케이프까지 처리한 뒤 텍스트를 일치/비일치 구간 배열로
+  쪼개고, `components/results/highlighted-text.tsx`(`<HighlightedText text query>`)가 그
+  결과를 React 노드로만 옮긴다. `dangerouslySetInnerHTML`은 쓰지 않는다 — 기사 제목·본문이
+  외부 사이트에서 긁어온 문자열이라 그대로 이어 붙이면 XSS 경로가 된다. 검색 대상은
+  파일명·제목이라(§정보 구조 결정 근거) 본문에 검색어가 없으면 본문 쪽은 강조되지 않는
+  것이 정상이다.
+- **강조 색은 하드코딩하지 않고 토큰으로 뺐다.** 사용자는 "노란색"을 요청했지만
+  `docs/CONVENTIONS.md` §8이 하드코딩 색상을 금지해, `app/globals.css`에
+  `--highlight`/`--highlight-foreground`(라이트: 또렷한 노랑 + 어두운 글자, 다크: 채도를
+  낮춘 골드 톤 + 어두운 글자 — 다크에서 눈부시지 않도록)를 새로 두고
+  `bg-highlight text-highlight-foreground` 클래스만 쓴다.
+- **검색어 상태가 `article-file-list.tsx`에서 `app/results/page.tsx`로 올라갔다.**
+  `article-preview.tsx`도 같은 값으로 제목·본문을 강조해야 해서, `selectedArticleId`·
+  `categories`와 같은 이유(D-006 패턴)로 페이지가 쥐고 두 컴포넌트에 `query`/
+  `onQueryChange`로 내려준다. 서버로 나가는 디바운스된 검색어(`debouncedQuery`)는
+  기존대로 `article-file-list.tsx` 내부에 남는다 — 하이라이트는 타이핑 즉시 반응해야
+  하므로 디바운스 전 값을 쓴다.
+- **④ 목록에는 자체 스크롤을 두지 않는다. 페이지 스크롤 하나만 쓴다(22일차 후속, I-059).**
+  처음에는 `max-h-[28rem]` + 내부 `ScrollArea`로 만들었고 스크롤 자체는 동작했다. 그런데
+  **실사용에서 더 나쁜 함정이 드러났다.** ④ 카드는 ②실행 선택·③요약 카드 아래에 놓여
+  화면 최상단 기준 **677px 지점에서 시작**한다. 창 높이가 900px이면 목록의 스크롤 영역은
+  **61px만 보인다.** 그 상태에서 휠을 굴리면 페이지가 아니라 **안쪽 목록이 먼저 스크롤되고**,
+  기사 500건이면 안쪽 콘텐츠가 19,000px이라 그것을 다 지나야 페이지가 움직인다 —
+  사용자에게는 "스크롤이 안 내려가서 아래 파일을 클릭할 수 없다"로 나타난다.
+
+  **중첩 스크롤 컨테이너를 없애는 것이 유일하게 안정적인 해법이다.** 목록은 내용만큼 자라고
+  페이지가 스크롤된다. 브라우저 스크롤바가 실제 위치를 그대로 보여주고 드래그·`PageDown`·
+  `End`가 전부 기대대로 동작한다. 목록이 길어지는 대가는 ⑤ 미리보기를 `lg:sticky lg:top-20`
+  으로 붙여 상쇄한다(`crawl-run-panel.tsx`가 같은 이유로 쓰는 관용구) — 아래쪽 파일을 골라도
+  본문이 화면에 남아 있다.
+
+  **교훈**: 세로로 쌓인 카드들 **아래에** 놓인 영역에 자체 스크롤을 주면, 그 영역에 닿기 위해
+  페이지를 스크롤해야 하는 구간에서 휠이 안쪽에 붙잡힌다. 화면에 스크롤 컨테이너를 하나 더
+  들이기 전에 **"사용자가 이 영역에 닿으려면 먼저 페이지를 스크롤해야 하는가"**를 확인한다.
+
+---
+
 ## 화면 구성
 
 | 영역 | 목적 |
@@ -176,8 +220,8 @@
 | ③ 실행 요약 카드 | `Card`/`CardHeader`/`CardTitle`/`CardAction`/`CardContent`, `Badge`, `Button` | `grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2` | 저장 경로 `font-mono text-xs`, 실패 건수 `text-destructive`(실패 0건이면 기본색) |
 
 **「수집 결과」 항목에 `skippedCount`를 함께 쓴다** — `skippedCount > 0`일 때만 `성공 53건 · 실패 0건 · 41건 미수집`처럼 보조 문구를 덧붙인다. 중단으로 요청조차 하지 않은 기사 수이며 **"실패"라는 낱말을 쓰지 않는다**(D-029). 화면 01이 §⑧에서 이미 같은 표현을 쓰므로 문구를 그대로 맞춘다(D-030). `text-destructive`를 주지 않는다 — 오류가 아니다. `skippedCount === 0`이면 이 문구 자체를 렌더하지 않는다(I-023).
-| ④ 기사 파일 목록 | `Card`, `Label`+`Input`(검색), `ScrollArea`, `Table` 계열(데스크톱), `ul/li/button`(모바일), `Badge` | 데스크톱 `hidden lg:block`, 모바일 `lg:hidden`, `ScrollArea` `max-h-[28rem]` | 선택 행에 `aria-selected` + `bg-muted` |
-| ⑤ 본문 미리보기 | `Card`, `Separator`, `ScrollArea`, `Button`(icon, 외부 링크) | `whitespace-pre-wrap font-mono text-sm leading-relaxed` | 컨테이너에 `aria-live="polite"`. `whitespace-pre-wrap` 전제는 아래 "본문 개행 보존 전제" 참고 |
+| ④ 기사 파일 목록 | `Card`, `Label`+`Input`(검색), `ScrollArea`, `Table` 계열(데스크톱), `ul/li/button`(모바일), `Badge`, `HighlightedText`(제목 열) | 데스크톱 `hidden max-h-[28rem] grid-rows-[minmax(0,1fr)] lg:grid`로 감싼 `div` 안에 `ScrollArea` `min-h-0`, 모바일은 `lg:hidden`으로 뒤집은 같은 조합 | 선택 행에 `aria-selected` + `bg-muted`. 스크롤 확정 이유·grid를 쓴 이유는 위 "검색어 하이라이트 · 목록 스크롤(Task 029)" 참고 |
+| ⑤ 본문 미리보기 | `Card`, `Separator`, `ScrollArea`, `Button`(icon, 외부 링크), `HighlightedText`(제목·본문) | `whitespace-pre-wrap font-mono text-sm leading-relaxed` | 컨테이너에 `aria-live="polite"`. `whitespace-pre-wrap` 전제는 아래 "본문 개행 보존 전제" 참고. 제목·본문의 검색어 일치 구간은 `bg-highlight text-highlight-foreground` 토큰의 `<mark>`로 강조(Task 029) |
 | 빈 상태(실행 이력 0건 / 파일 미선택) | `EmptyState` (`components/common/empty-state.tsx`) | 컴포넌트 내부(`Empty` 프리미티브) | 00-app-shell.md가 정한 01~05 공용 빈 상태 블록. 같은 마크업을 이 화면에서 다시 그리지 않는다 |
 | 실패 알림 | `ErrorAlert` (`components/common/error-alert.tsx`) | — | 내부가 `Alert variant="destructive"` + `TriangleAlert` + `AlertTitle` + `AlertDescription`이다 |
 | [키워드 분석] 버튼 | `Button asChild` + `next/link` | `CardAction` 슬롯에 배치 | 선택된 `runId`를 쿼리 파라미터로 유지한 채 `/keywords`로 이동. 내부 이동이므로 raw `<a href="/...">`를 쓰지 않는다(`@next/next/no-html-link-for-pages` **error**) |
@@ -333,6 +377,12 @@ import { ErrorAlert } from '@/components/common/error-alert'
 | `EmptyState` | ② 실행 이력 0건, ③ 파일 미선택 |
 | `ErrorAlert` | ⑤ 일부 기사 수집 실패 알림 |
 
+### 이 화면(도메인) 컴포넌트 (`components/results/`)
+
+| 컴포넌트 | 용도 |
+|---------|------|
+| `HighlightedText`(Task 029, `highlighted-text.tsx`) | ④ 제목 열, ⑤ 제목·본문의 검색어 일치 구간을 `<mark>`로 강조. 순수 함수 `lib/highlight.ts`의 `splitByMatch`를 React 노드로 옮기기만 한다(`dangerouslySetInnerHTML` 미사용) |
+
 ### shadcn 컴포넌트
 
 아래 목록은 Task 002(공통 앱 셸 스캐폴딩)에서 **13종을 일괄 설치하며 모두 설치가 끝났다.** 이 화면에서 추가로 설치할 것은 없다.
@@ -383,6 +433,8 @@ import { ErrorAlert } from '@/components/common/error-alert'
 | ④ 기사 파일 목록(검색 Input · 데스크톱 표 · 모바일 카드 리스트) | `components/results/article-file-list.tsx` (신규) |
 | ⑤ 본문 미리보기(메타 · 본문 출처 배지 · 본문 `ScrollArea` · 파일 미선택 상태) | `components/results/article-preview.tsx` (신규) |
 | 실행 목록·요약·기사 목록·본문 fetch 래퍼 | `lib/api/run-client.ts` (신규) |
+| 검색어 하이라이트 구간 쪼개기(Task 029, vitest 대상) | `lib/highlight.ts` (신규) |
+| 검색어 하이라이트 렌더링(④ 제목 열 · ⑤ 제목·본문 공용, Task 029) | `components/results/highlighted-text.tsx` (신규) |
 
 ### ⚠️ 아래 스켈레톤의 타입 선언을 그대로 베끼지 않는다 (I-024)
 

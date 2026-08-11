@@ -35,6 +35,11 @@ head -c 200 feed.xml
 
 # HTML 셀렉터 확인 (프로젝트 루트에서 cheerio로)
 node -e "const c=require('cheerio');fetch('<url>',{headers:{'User-Agent':'Mozilla/5.0'}}).then(r=>r.text()).then(h=>{const \$=c.load(h);console.log(\$('<selector>').length)})"
+
+# ⚠️ 새 후보는 등록 전에 이중 인코딩(예: `&amp;quot;`)이 없는지 반드시 스캔한다
+# (22일차, 아주경제 재테크 사고 — docs/DECISIONS.draft.크롤파이프라인.md 참고). 한 건이라도
+# 나오면 그 매체는 등록하지 않는다.
+node -e "const fs=require('fs');const raw=fs.readFileSync('feed.xml','utf-8');const m=[...raw.matchAll(/&amp;(#x[0-9a-fA-F]+|#\d+|nbsp|lt|gt|quot|apos|amp);/g)];console.log('이중 인코딩 매치:', m.length)"
 ```
 
 ### 재확인 로그
@@ -477,3 +482,200 @@ Google-Extended·Bytespider가 한 그룹)이라는 점은 기록해 둔다 — 
 완전 초기 상태(파일을 지우고 새로 시작)에서는 여전히 언론사 0건이고, 이 17곳(기존 5 + 신규 12)을 전부
 손으로 다시 입력해야 한다 — 그 입력 부담을 시드로 풀지 가져오기 기능으로 풀지는 I-037의 빈 상태 설계를
 지키면서 화면 워크스트림과 함께 다음 회차에 검토할 문제로 남겨 두었다.
+
+---
+
+## 표본 확충 조사 — 카테고리당 6곳 이상 (Task 030, 22일차)
+
+**확인 일자: 2026-08-11.** 사용자 요청("정확한 분석을 위해 언론사를 많이 추가해줬으면 좋겠다")에 따라
+카테고리마다 3곳이던 표본을 **최소 6곳**으로 늘렸다. 측정 환경은 위 §확인 일자와 동일
+(Windows 11 · Node v24.19.0 · `fetch`/`curl` + `fast-xml-parser` 5.10.1). 재현 방법은 위 §재현 방법을
+그대로 따랐고, 「요약 평균」도 기존 절과 같은 방식(태그·CDATA·엔티티 제거 후 공백을 접은 글자 수,
+`fast-xml-parser`로 실제 파싱)으로 쟀다.
+
+**21일차 「죽은 후보」에 실린 한국경제·서울경제·스포츠서울은 다시 두드리지 않았다** — 사유(item 레벨
+`<description>` 없음·의심스러운 리다이렉트)가 URL이 아니라 매체 자체의 구조적 특성이라 오늘 다시 확인해도
+같은 결과가 나올 것이 명백하기 때문이다. **RSS 우선 원칙도 그대로 지켰다** — 아래 17곳 전부 RSS다.
+
+### 새로 등록한 17곳
+
+| 카테고리 | 매체 | URL | 인코딩 | 아이템 수 | 요약 평균(범위) | 날짜 태그·형식 | 확인 결과 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| IT/AI | **전자신문** | `https://rss.etnews.com/Section901.xml` | UTF-8(`text/xml`, charset 없음·선언 `utf-8`) | 30건 | 249.8자(248~250) | `<pubDate>` RFC 822 | 200 OK |
+| IT/AI | **AI타임스** | `https://www.aitimes.com/rss/allArticle.xml` | UTF-8(`application/xml`) | 50건 | 299.8자(299~300) | `<pubDate>` 비표준(`2026-08-11 07:00:00`) | 200 OK |
+| IT/AI | **IT조선** | `https://it.chosun.com/rss/allArticle.xml` | UTF-8(`application/xml`) | 50건 | 299.8자(299~300) | `<pubDate>` 비표준 | 200 OK |
+| IT/AI | **테크M** | `https://www.techm.kr/rss/allArticle.xml` | UTF-8(`application/xml`) | 50건 | 298.6자(240~300) | `<pubDate>` 비표준 | 200 OK. AI타임스·IT조선과 같은 CMS(경로 패턴 `/rss/allArticle.xml`, 채널 구조 동일) |
+| 엔터 | **노컷뉴스 연예** | `https://rss.nocutnews.co.kr/category/entertainment.xml` | UTF-8(`text/xml`) | 50건 | 139.0자(24~200) | `<pubDate>` **기형**(`Tue, 11 08 2026 07:00:00 +0900` — 요일 뒤에 월 이름 없이 숫자만 두 개) | 200 OK. 날짜 파싱이 실패하면 예외 대신 `undefined`로 흘리는 기존 규칙(§표에서 놓치면 안 되는 것)이 그대로 걸리는 실사례 |
+| 엔터 | **파이낸셜뉴스 연예** | `https://www.fnnews.com/rss/r20/fn_realnews_ent.xml` | UTF-8(`application/xml;charset=UTF-8`) | 3건(발행량 적음) | 470.0자(408~552) | `<pubDate>` RFC 822류(콤마 뒤 공백 없음) | 200 OK. 랜딩 페이지 `fnnews.com/rss`에서 섹션별 경로 19종을 확인하고 그중 4종(연예·스포츠·경제·증권)을 실제로 태웠다 |
+| 엔터 | **국민일보 연예** | `https://www.kmib.co.kr/rss/data/kmibEntRss.xml` | UTF-8 **BOM 포함**(`text/xml`, 선언 `UTF-8`) | 10건 | 1001.7자(576~1474) | `<pubDate>`가 `<![CDATA[...]]>`로 감싸여 있고 비표준(`9 Aug  2026 16:07:00 GMT`, 요일 없음·이중 공백) | 200 OK |
+| 스포츠 | **스포탈코리아** | `https://www.sportalkorea.com/rss/allArticle.xml` | UTF-8(`application/xml`) | 50건 | 290.7자(17~300) | `<pubDate>` 비표준 | 200 OK |
+| 스포츠 | **노컷뉴스 스포츠** | `https://rss.nocutnews.co.kr/category/sports.xml` | UTF-8(`text/xml`) | 50건 | 132.4자(23~194) | `<pubDate>` 기형(위와 동일 패턴) | 200 OK |
+| 스포츠 | **파이낸셜뉴스 스포츠** | `https://www.fnnews.com/rss/r20/fn_realnews_sports.xml` | UTF-8 | 3건(발행량 적음) | 408.7자(399~418) | `<pubDate>` RFC 822류 | 200 OK |
+| 스포츠 | **국민일보 스포츠** | `https://www.kmib.co.kr/rss/data/kmibSpoRss.xml` | UTF-8 BOM | 10건 | 1077.1자(675~1258) | `<pubDate>` CDATA·비표준 | 200 OK |
+| 경제 | **파이낸셜뉴스 경제** | `https://www.fnnews.com/rss/r20/fn_realnews_economy.xml` | UTF-8 | 19건 | 403.1자(349~447) | `<pubDate>` RFC 822류 | 200 OK |
+| 경제 | **노컷뉴스 경제** | `https://rss.nocutnews.co.kr/category/economy.xml` | UTF-8(`text/xml`) | 50건 | 123.9자(23~195) | `<pubDate>` 기형 | 200 OK |
+| 경제 | **국민일보 경제** | `https://www.kmib.co.kr/rss/data/kmibEcoRss.xml` | UTF-8 BOM | 10건 | 1425.2자(442~2650) | `<pubDate>` CDATA·비표준 | 200 OK |
+| 증권 | **파이낸셜뉴스 증권** | `https://www.fnnews.com/rss/r20/fn_realnews_stock.xml` | UTF-8 | 57건 | 412.0자(128~492) | `<pubDate>` RFC 822류 | 200 OK |
+| 증권 | **이투데이 금융** | `https://rss.etoday.co.kr/eto/finance_news.xml` | UTF-8(`text/xml;charset=UTF-8`) | 5건(발행량 적음) | 73.8자(72~77) | `<pubDate>` RFC 822 | 200 OK. 기존 등록된 「이투데이 마켓」(`market_news.xml`)과 다른 섹션(금융) — 같은 도메인이지만 별개 피드 |
+| ~~증권~~ | ~~아주경제 재테크~~ | ~~`https://www.ajunews.com/rss/investment.xml`~~ | — | — | — | — | **등록 후 제거됨(22일차) — 아래 「아주경제 재테크 제거와 서울파이낸스 교체」 참고. 취소선은 이 표가 등록 당시 기록이었음을 남기려고 지운 것이 아니라 그대로 두었다** |
+| 증권 | **서울파이낸스**(교체분) | `https://cdn.seoulfn.com/rss/gn_rss_allArticle.xml` | UTF-8(`application/xml`, 선언 `utf-8`) | 50건 | 287.7자(67~307) | `<pubDate>` RFC 822 | 200 OK. **이중 인코딩 스캔(`&amp;(quot\|apos\|lt\|gt\|nbsp\|amp\|#\d+);`) 0건** — 아주경제 제거 후 신규 조사 절차(§재현 방법)로 처음부터 검증하고 등록했다 |
+
+**요약 하한(50자) 미달 항목이 섞여 있는 매체**: 노컷뉴스 3종(연예 24자·스포츠 23자·경제 23자 최저치)과
+스포탈코리아(17자 최저치)는 평균은 100~290자대로 여유 있지만 개별 기사 중 50자 미만이 섞여 있다. 이 기사들은
+`lib/crawler/article-parser.ts`의 최소 길이 검사에서 **개별 실패로 격리**되고 언론사 전체나 실행을 무너뜨리지
+않는다(`docs/CONVENTIONS.md` §7 · `CrawlFailure` 패턴) — 새로 추가한 표본에서 그 격리 규칙이 실제로 걸리는
+사례가 나온 것이라 결함이 아니라 정상 동작이다.
+
+**국민일보(BOM)·아주경제(XML 선언 없음)의 인코딩 처리**: 둘 다 UTF-8이라 EUC-KR처럼 별도 디코더 분기가
+필요하지는 않지만, `fetch` 응답을 `TextDecoder('utf-8')`로 디코딩하면 BOM(U+FEFF)이 텍스트 맨 앞에 남는다.
+`fast-xml-parser`는 이 BOM을 무시하고 정상 파싱했고(실측 확인), `<title>` 등 첫 필드 파싱이 깨지지 않는 것도
+확인했다. 아주경제는 `<?xml ?>` 선언 자체가 없는 드문 경우인데, 파서가 기본값(UTF-8)으로 정상 처리했다 —
+선언이 없으면 UTF-8로 간주하는 것이 XML 스펙 기본값과도 맞다.
+
+### `data/press-sources.json` 등록 — 등록 방법과 id
+
+기존 17곳(§`data/press-sources.json` 시드 예시 5 + §카테고리 확장 후보 조사 12)을 지우지 않고 위 17곳을
+더했다. **파일을 손으로 편집하지 않고 `POST /api/press`로 등록했다** — 한글 언론사명은 각 요청 본문을
+UTF-8 JSON 파일로 먼저 쓴 뒤 `curl --data-binary @파일`로 보내 셸 인코딩 경유를 피했다(21일차 mojibake 사고
+재발 방지, 팀장 지시). 등록 직후 `GET /api/press`로 전체 34건의 `name` 필드를 다시 읽어 한글이 깨지지
+않았음을 전수 확인했다(아래 「검증 결과」).
+
+| id | name | category | feedUrl |
+| --- | --- | --- | --- |
+| `etnews` | 전자신문 | it-ai | `https://rss.etnews.com/Section901.xml` |
+| `aitimes` | AI타임스 | it-ai | `https://www.aitimes.com/rss/allArticle.xml` |
+| `itchosun` | IT조선 | it-ai | `https://it.chosun.com/rss/allArticle.xml` |
+| `techm` | 테크M | it-ai | `https://www.techm.kr/rss/allArticle.xml` |
+| `nocut-entertainment` | 노컷뉴스 연예 | entertainment | `https://rss.nocutnews.co.kr/category/entertainment.xml` |
+| `fnnews-entertainment` | 파이낸셜뉴스 연예 | entertainment | `https://www.fnnews.com/rss/r20/fn_realnews_ent.xml` |
+| `kmib-entertainment` | 국민일보 연예 | entertainment | `https://www.kmib.co.kr/rss/data/kmibEntRss.xml` |
+| `sportalkorea-sports` | 스포탈코리아 | sports | `https://www.sportalkorea.com/rss/allArticle.xml` |
+| `nocut-sports` | 노컷뉴스 스포츠 | sports | `https://rss.nocutnews.co.kr/category/sports.xml` |
+| `fnnews-sports` | 파이낸셜뉴스 스포츠 | sports | `https://www.fnnews.com/rss/r20/fn_realnews_sports.xml` |
+| `kmib-sports` | 국민일보 스포츠 | sports | `https://www.kmib.co.kr/rss/data/kmibSpoRss.xml` |
+| `fnnews-economy` | 파이낸셜뉴스 경제 | economy | `https://www.fnnews.com/rss/r20/fn_realnews_economy.xml` |
+| `nocut-economy` | 노컷뉴스 경제 | economy | `https://rss.nocutnews.co.kr/category/economy.xml` |
+| `kmib-economy` | 국민일보 경제 | economy | `https://www.kmib.co.kr/rss/data/kmibEcoRss.xml` |
+| `fnnews-stock` | 파이낸셜뉴스 증권 | stock | `https://www.fnnews.com/rss/r20/fn_realnews_stock.xml` |
+| `etoday-finance` | 이투데이 금융 | stock | `https://rss.etoday.co.kr/eto/finance_news.xml` |
+| ~~`ajunews-investment`~~ | ~~아주경제 재테크~~ | ~~stock~~ | **22일차에 `DELETE`됨 — 아래 참고** |
+| `seoulfn-stock` | 서울파이낸스 | stock | `https://cdn.seoulfn.com/rss/gn_rss_allArticle.xml` |
+
+전부 `sourceType: "rss"`이고 `contentSelector`는 비웠다(요약만 경로 — 원문 페이지를 열지 않아 상대 서버
+요청을 최소화한다는 §크롤링 예의 원칙을 그대로 지켰다).
+
+### robots.txt 확인 결과 — 신규 도메인
+
+| 도메인 | `User-agent: *` | 비고 |
+| --- | --- | --- |
+| `etnews.com` | `Allow: /` | 기존 §크롤링 예의에 이미 기록된 값과 동일(재확인) |
+| `aitimes.com` | `Disallow: /admin/` | 기존 기록과 동일(재확인). `bingbot`에 `Crawl-delay: 30` |
+| `it.chosun.com` | `Disallow: /admin/` | `www.it.chosun.com`은 DNS 자체가 없다 — `it.chosun.com`(www 없이)이 정식 도메인 |
+| `techm.kr` | `Disallow: /admin/ /eventConfig/` | RSS 경로 무관 |
+| `nocutnews.co.kr`(본지) | `Disallow: /news/{정치·사회·경제·연예·스포츠 등 각 섹션}` | **`*`가 기사 목록 페이지 다수를 막는다.** 다만 우리가 실제로 요청을 보내는 것은 별도 서브도메인 `rss.nocutnews.co.kr`이고 이 도메인의 robots.txt는 **404(파일 없음 → 관례상 무제한)** — RSS 요청 자체는 막히지 않는다. `contentSelector`를 비워 원문 페이지(`www.nocutnews.co.kr/news/...`)를 열지 않으므로 본지의 `Disallow`도 실질적으로 부딪히지 않는다. `GPTBot`·`ClaudeBot`·`anthropic-ai` 등 AI 크롤러는 이름으로 전면 차단하지만 이 도구는 그 이름을 쓰지 않는다(§크롤링 예의 원칙 그대로 적용) |
+| `fnnews.com` | `Disallow: /print/ /sample/ /custom/ /newsPreview/ /redirect/` | RSS 경로(`/rss/r20/...`) 무관 |
+| `kmib.co.kr` | `Allow: /ads.txt` · `Disallow: /search/` | RSS 경로(`/rss/data/...`) 무관. `GPTBot`·`ClaudeBot`·`anthropic-ai`·`Google-Extended` 등을 이름으로 전면 차단하지만 `*`는 열려 있다 — 노컷뉴스와 같은 구조 |
+| `sportalkorea.com` | `Disallow: /admin/` | `GPTBot` 이름 차단, `*`는 열림. `bingbot` `Crawl-delay: 30` |
+| ~~`ajunews.com`~~ | ~~`Disallow: /search /keyword /gen/ ...`(RSS 무관)~~ | ~~`GPTBot` 이름 차단, `*`는 열림~~ — **매체 자체가 22일차에 제거됨(아래 참고), robots는 기록으로만 남긴다** |
+| `seoulfn.com`(교체분) | `Disallow: /admin/` | `bingbot` `Crawl-delay: 30`. RSS 경로(`cdn.seoulfn.com/rss/...`) 무관 |
+
+**패턴이 계속 반복된다**: 이름이 붙은 AI 크롤러(`GPTBot`·`ClaudeBot`·`Google-Extended` 등)를 명시적으로
+차단하는 언론사가 늘고 있지만, `*`(익명 UA)에는 RSS·기사 경로를 열어 두는 경우가 대부분이다. 이 도구는
+일반 Chrome UA를 쓰고 어떤 봇 이름도 사칭하지 않으므로(§크롤링 예의) 이 구조와 계속 부딪히지 않는다.
+**단, `*`가 특정 경로를 명시적으로 막는 매체(노컷뉴스 본지의 `/news/{섹션}`)는 있었다** — RSS 서브도메인과
+기사 원문 서브도메인이 분리된 매체 구조 덕에 이번엔 문제가 되지 않았지만, 앞으로 `*`의 `Disallow`가 RSS
+경로 자체를 겨냥하는 매체가 나오면 그 매체는 후보에서 제외해야 한다.
+
+### 검증 결과
+
+1. **`GET /api/press?category=<카테고리>`로 5개 카테고리 전부 6곳 이상 확인**: IT/AI 9 · 엔터 6 · 스포츠 7 ·
+   경제 6 · 증권 6 (기존 3곳 + 카테고리별 3~4곳 신규 등록).
+2. **기존 17곳 전수 생존 확인**: `GET /api/press`(전체 34건)에서 기존 17개 id
+   (`bloter`·`boannews`·`inews24`·`zdnet-korea`·`naver-d2`·`yna-entertainment`·`sbs-entertainment`·
+   `khan-entertainment`·`yna-sports`·`sbs-sports`·`khan-sports`·`yna-economy`·`sbs-economy`·
+   `asiae-economy`·`asiae-stock`·`etoday-market`·`infostock-daily`)가 전부 그대로 있고 `name`이 깨지지
+   않았다.
+3. **신규 17곳 한글명 mojibake 없음**: `POST /api/press` 응답과 재조회한 `GET /api/press` 양쪽에서
+   `name` 필드를 직접 읽어 확인했다(위 표).
+4. **실제 크롤 1회로 신규 언론사 수집 확인**: 5개 카테고리에서 신규 언론사 각 1곳(`etnews`·
+   `nocut-entertainment`·`sportalkorea-sports`·`fnnews-economy`·`ajunews-investment`)을 골라
+   `POST /api/crawl`(`maxArticlesPerPress: 5`)을 실행 — `runId: 20260811-085056`,
+   `successCount: 25` · `failCount: 0`. `data/runs/20260811-085056/articles/0001.txt`~`0025.txt`가
+   실제로 저장됐고, 본문 한글이 깨지지 않았으며 `# category:` 메타 라인도 정확히 찍혔다(직접 열어 확인).
+   **이 run은 아래 「아주경제 재테크 제거」 판정의 증거로 그대로 남겨 둔다 — 지우지 않는다.**
+
+### 아주경제 재테크 제거와 서울파이낸스 교체 (22일차 사후 조치)
+
+Task 029 교차검증 중 아주경제 재테크 기사에서 `&quot;`·`&#39;`가 화면에 그대로 보이는 것을 발견해
+조사한 결과, **원문 피드가 `&amp;quot;`처럼 이중 인코딩돼 있었다**(raw 바이트로 직접 확인). 우리
+디코더(`decodeHtmlEntities`)는 I-043 규칙("정확히 한 번만 스캔")대로 정확히 동작한 것이고 버그가
+아니었지만, 그 결과 사용자 화면과 키워드 랭킹에 `quot`(4위)·`nbsp`(8위) 같은 인코딩 잔여물이
+그대로 노출됐다(`GET /api/runs/20260811-085056/keywords` 실측). 판정 근거와 기각한 대안(전용
+이중 디코딩 전처리 추가 등)은 `docs/DECISIONS.draft.크롤파이프라인.md`에 남겼다 — **여기서는
+결과만 기록한다.**
+
+- `DELETE /api/press/ajunews-investment`로 제거했다.
+- 대체 후보로 **서울파이낸스**(`seoulfn-stock`, `https://cdn.seoulfn.com/rss/gn_rss_allArticle.xml`)를
+  등록했다 — 위 §새로 등록한 17곳 표에 실측값 기록. **등록 전 이중 인코딩 스캔을 통과**했다(0건).
+- 재검증: `GET /api/press?category=stock` → 6곳 유지(`seoulfn-stock`·`asiae-stock`·`etoday-finance`·
+  `etoday-market`·`infostock-daily`·`fnnews-stock`). `POST /api/crawl`(`pressIds: ["seoulfn-stock"]`,
+  `maxArticlesPerPress: 10`) → `runId: 20260811-092100`, `successCount: 10`·`failCount: 0`.
+  `data/runs/20260811-092100/articles/*.txt` 10건을 전부 `grep`으로 `&quot;`·`&#39;`·`&amp;`·`&nbsp;`·
+  `&apos;`·`&lt;`·`&gt;` 검사 — **매치 0건**, 엔티티 유입 없음.
+- (참고, 이번 조사 범위 밖) 저장된 txt에서 `\'메가특구특별법\'`처럼 백슬래시로 이스케이프된
+  따옴표가 눈에 띄었다 — HTML 엔티티 이중 인코딩과는 다른 종류의 습관(소스 쪽 JSON 이스케이프가
+  새는 것으로 추정)이고, 특수문자 하나짜리라 Kiwi가 독립 토큰으로 집을 가능성은 낮다. 오염이
+  실제로 확인되면 그때 다시 연다.
+
+### 죽은 후보 (문서에 남기되 등록하지 않음)
+
+| 후보 | URL | 결과 |
+| --- | --- | --- |
+| **아주경제 재테크**(한 차례 등록했다 제거함) | `ajunews.com/rss/investment.xml` | 200 OK·description 정상이라 22일차에 한 번 등록했지만, **원문이 `&amp;quot;`·`&amp;#39;`·`&amp;nbsp;`로 이중 인코딩돼 있어**(700건, 아이템 79% 영향) 키워드 랭킹에 `quot`(4위)·`nbsp`(8위)가 올라오는 실제 오염을 일으켰다. `DELETE`로 제거하고 서울파이낸스로 교체했다 — 근거는 `docs/DECISIONS.draft.크롤파이프라인.md`. **재등록하려면 이중 인코딩부터 다시 스캔한다** |
+| 엑스포츠뉴스 | `xportsnews.com/rss/allArticle.xml` | 200 OK지만 `Content-Type: text/html`이고 실제로 HTML 페이지가 내려온다 — RSS 엔드포인트가 아니다 |
+| 텐아시아 | `tenasia.hankyung.com/feed` | 301 → 200이지만 홈페이지 HTML로 리다이렉트된다(실제 피드가 아님) |
+| 뉴스엔 | `newsen.com/rss/rss_enter.xml` | 404 |
+| YTN 경제·스포츠 | `ytn.co.kr/_rss/{economy,sports}.xml` | 302 → 404(리다이렉트 뒤가 죽어 있다). `ytn.co.kr/rss` 랜딩 페이지에서도 대안 경로를 찾지 못했다 |
+| 머니투데이 연예·경제·증권·스포츠 | `mt.co.kr/rss/mt_{star,news,stock,sports}.xml` | 전부 404. `mt.co.kr/rss` 랜딩 페이지가 빈 목록을 준다 |
+| 머니S 증권 | `moneys.mt.co.kr/rss/mt_stock.xml` | 301 → 404 |
+| 헤럴드경제 경제 | `biz.heraldcorp.com/rss/index_biz.xml` | 301 → 200이지만 HTML(제대로 된 XML 엔드포인트 아님). `heraldcorp.com/rss` 랜딩 페이지도 빈 목록 |
+| 파이낸셜뉴스 경제(추정 경로) | `fnnews.com/rss/fn_realnews_economy.xml` | 404 — **랜딩 페이지(`fnnews.com/rss`)가 알려준 실제 경로는 `/rss/r20/fn_realnews_economy.xml`**(위 표에 등록). 추정 경로와 실제 경로가 달랐던 사례 |
+| 뉴스토마토 경제(섹션 지정) | `newstomato.com/rss/section.xml?sid=101` | 404. **자동 검색 태그로 찾은 루트 피드(`newstomato.com/rss/`)는 실제로 살아 있었지만**(200 OK, 47KB, 전체기사 혼합) 경제 섹션만 분리할 수 없어 이미 economy 카테고리가 충분히 채워진 상태에서는 등록하지 않았다 |
+| 데일리안 경제 | `dailian.co.kr/rss/S1N4.xml` | 404 |
+| 이데일리 연예·경제·증권·스포츠(섹션 추정) | `rss.edaily.co.kr/edaily_{entertain,econ,stock,sports}_news.xml` | 전부 연결 자체가 실패했다(호스트 응답 없음). **`rss.edaily.co.kr/edaily_news.xml`(전체뉴스, `/rss` 랜딩 페이지가 알려준 유일한 경로)은 살아 있었지만**(200 OK, `http://`만 되고 `https://`는 확인 안 됨) 섹션이 분리되지 않아 이미 채워진 economy 카테고리에는 등록하지 않았다 |
+| 한국경제TV(와우TV) 증권 | `wowtv.co.kr/rss/{stock,allArticle}.xml` | 둘 다 302 → 200 HTML(RSS 아님). `wowtv.co.kr/rss` 랜딩 페이지도 빈 목록 |
+| 팍스넷 증권 | `paxnet.co.kr/rss/news_stock.xml` | 302 → 200 HTML(RSS 아님) |
+| 마이데일리 스포츠 | `mydaily.co.kr/rss/rss_sports.xml` | 302 → 200 HTML(RSS 아님) |
+| 글로벌이코노믹 | `g-enews.com/rss/allArticle.xml` | 500 Internal Server Error |
+| 비즈니스포스트 | `businesspost.co.kr/rss/allArticle.xml` | 404 |
+| 뉴스프라임 | `newsprime.co.kr/rss/allArticle.xml` | 200 OK지만 응답 본문이 0바이트 |
+| 머니투데이방송(MTN) | `mtn.co.kr/rss/allArticle.xml` | 301 → 404 |
+| 서울경제TV(SEN TV) | `sentv.co.kr/rss/allArticle.xml` | 200 OK지만 응답 본문이 0바이트 |
+| 조세일보 | `joseilbo.com/rss/allArticle.xml` | 404 |
+| 한국금융신문 | `fntimes.com/rss/allArticle.xml` | 500 Internal Server Error |
+| 아주경제 문화·연예 | `ajunews.com/rss/cultureentertainment.xml` | 200 OK · `<item>` **0건**(확인 시점 기사 없음) — 죽은 URL은 아니나 지금 당장은 쓸 수 없어 미등록. 재테크 섹션(위 표에 등록)으로 대체 |
+| 노컷뉴스 산업 | `rss.nocutnews.co.kr/category/it.xml` | 200 OK · 50건이지만 `<title>`이 "노컷뉴스 - **산업**"이고 채널 `<link>`가 `http://localhost:...`로 깨져 있다(노컷뉴스 쪽 피드 생성 버그로 보임) — IT/AI 카테고리 취지와 맞지 않고 이미 4곳이 확보된 상태라 미등록 |
+
+### 왜 이 17곳을 골랐는가
+
+- **랜딩 페이지 우선 탐색**: 21일차 문서가 남긴 교훈("`/rss` 안내 페이지를 먼저 여는 방식이 맹목적 URL
+  추정보다 훨씬 잘 맞았다")을 그대로 따랐다. `fnnews.com/rss`·`nocutnews.co.kr/rss`·`kmib.co.kr/rss`·
+  `ajunews.com/rss` 4곳은 랜딩 페이지에서 실제 엔드포인트 목록을 얻어 성공했고, 반대로 URL을 추정만 한
+  머니투데이·와우TV·팍스넷·마이데일리 등은 전부 죽은 후보로 남았다.
+- **발행량이 적은 매체도 등록 기준을 완화하지 않았다**: 파이낸셜뉴스 연예·스포츠(3건), 이투데이 금융(5건)은
+  건수가 적지만 살아 있고 요약이 정상 채워지므로 등록했다 — "카테고리당 최소 6곳"은 표본 다양성이
+  목적이지 매체당 기사량이 아니다.
+- **노컷뉴스·국민일보·파이낸셜뉴스를 3개 카테고리씩 재사용한 이유**: 21일차와 같은 논리(§왜 이 12곳을
+  골랐는가) — 언론사 자체는 재사용해도 Press 레코드는 카테고리마다 별개이고, 섹션별 RSS가 이미 갖춰진
+  매체를 반복 활용하는 편이 매 카테고리마다 새 매체를 찾는 것보다 안정적이다. 다만 카테고리마다
+  **노컷뉴스·국민일보·파이낸셜뉴스 세 곳 외에 최소 1곳은 완전히 다른 매체**(전자신문·AI타임스·IT조선·
+  테크M / 스포탈코리아 / 아시아경제·이투데이·아주경제)를 넣어 표본 다양성을 지켰다.
+
+### `press-defaults.ts`는 여전히 손대지 않았다
+
+I-037(빈 상태 설계)·I-054(초기 입력 부담)의 판단 기준은 이번 회차에도 그대로 유지했다.
+`lib/storage/press-defaults.ts`의 `DEFAULT_PRESS_SOURCES`는 채우지 않았고, 등록은 전부
+`POST /api/press` → `data/press-sources.json` 경로로만 이뤄졌다. **다만 총 언론사 수가 17 → 34곳으로
+늘면서 I-054가 지적한 "완전 초기 상태에서 손으로 입력해야 하는 부담"은 정확히 두 배가 됐다** —
+이 사실은 이슈를 새로 열지 않고 `docs/ISSUES.draft.크롤파이프라인.md`에 I-054 갱신 메모로 남겼다(팀장
+전용 `docs/ISSUES.md` 갱신 전 단계).

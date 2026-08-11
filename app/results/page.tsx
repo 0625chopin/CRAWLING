@@ -49,6 +49,10 @@ export default function CollectResultPage() {
   // 값이라(목록을 좁히는 동시에 요약 카드에 "지금 보는 범위"를 보여준다) 이 페이지가 쥔다 —
   // selectedArticleId와 같은 이유(D-006 패턴).
   const [categories, setCategories] = useState<PressCategory[]>([])
+  // 기사 검색 Input의 값(Task 029). article-file-list.tsx(검색 대상·디바운스 fetch)와
+  // article-preview.tsx(제목·본문 하이라이트)가 같은 값을 봐야 화면 두 곳의 강조가 어긋나지
+  // 않는다 — categories·selectedArticleId와 같은 이유로 이 페이지가 쥔다(D-006 패턴).
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     fetchRuns()
@@ -76,6 +80,7 @@ export default function CollectResultPage() {
     setSummaryError(null)
     setSelectedArticleId(null)
     setCategories([])
+    setQuery('')
   }
 
   useEffect(() => {
@@ -159,8 +164,10 @@ export default function CollectResultPage() {
               onSelectArticleId={handleSelectArticleId}
               categories={categories}
               onCategoriesChange={setCategories}
+              query={query}
+              onQueryChange={setQuery}
             />
-            <ArticlePreview runId={selectedRunId} articleId={selectedArticleId} />
+            <ArticlePreview runId={selectedRunId} articleId={selectedArticleId} query={query} />
           </div>
         </div>
       )}

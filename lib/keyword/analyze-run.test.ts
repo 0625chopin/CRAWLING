@@ -30,6 +30,9 @@ const hasKeywordsMock = vi.fn()
 const readKeywordsMock = vi.fn()
 const writeKeywordsMock = vi.fn()
 vi.mock('@/lib/storage/keyword-repository', () => ({
+  // 집계 기준 마커는 상수라 스텁으로 바꿀 이유가 없다 — 실제 값을 그대로 쓴다. 목으로 만들면
+  // "코드가 쓰는 값"과 "테스트가 기대하는 값"이 갈려 캐시 무효화 회귀를 못 잡는다.
+  CURRENT_COUNT_BASIS: 'article',
   hasKeywords: (...args: unknown[]) => hasKeywordsMock(...args),
   readKeywords: (...args: unknown[]) => readKeywordsMock(...args),
   writeKeywords: (...args: unknown[]) => writeKeywordsMock(...args),
@@ -168,7 +171,13 @@ describe('analyzeRun — 캐시 우선', () => {
   it('force가 아니고 캐시가 있으면 readKeywords만 부르고 Kiwi 경로(aggregate)는 건드리지 않는다', async () => {
     hasKeywordsMock.mockResolvedValue(true)
     const cachedSummary = { ...EMPTY_SUMMARY, articleCount: 5 }
-    const cached = { runId: RUN_ID, analyzedAt: '2026-08-10T09:00:00.000Z', summary: cachedSummary, items: [] }
+    const cached = {
+      runId: RUN_ID,
+      analyzedAt: '2026-08-10T09:00:00.000Z',
+      countBasis: 'article' as const,
+      summary: cachedSummary,
+      items: [],
+    }
     readKeywordsMock.mockResolvedValue(cached)
 
     const result = await analyzeRun(RUN_ID)
@@ -184,6 +193,26 @@ describe('analyzeRun — 캐시 우선', () => {
     expect(listArticlesMock).not.toHaveBeenCalled()
     expect(aggregateKeywordsMock).not.toHaveBeenCalled()
     expect(writeKeywordsMock).not.toHaveBeenCalled()
+  })
+
+  // countBasis가 없는 파일은 집계 기준이 바뀌기 전(총 등장 횟수)에 만들어진 캐시다. 두 값은
+  // 똑같이 생긴 정수라 그대로 읽히면 랭킹이 조용히 옛 기준으로 표시된다 — 형식 검증으로는
+  // 걸러지지 않는 종류의 회귀라 여기서 못박는다(keyword-repository.ts의 countBasis 주석).
+  it('countBasis가 없는 옛 기준 캐시는 무시하고 다시 집계해 덮어쓴다', async () => {
+    hasKeywordsMock.mockResolvedValue(true)
+    readKeywordsMock.mockResolvedValue({
+      runId: RUN_ID,
+      analyzedAt: '2026-08-10T09:00:00.000Z',
+      summary: { ...EMPTY_SUMMARY, articleCount: 5 },
+      items: [{ runId: RUN_ID, keyword: '모델', posTag: 'NNG' as const, count: 244 }],
+    })
+    listArticlesMock.mockResolvedValue([])
+
+    const result = await analyzeRun(RUN_ID)
+
+    expect(aggregateKeywordsMock).toHaveBeenCalledOnce()
+    expect(writeKeywordsMock).toHaveBeenCalledOnce()
+    expect(result.file.countBasis).toBe('article')
   })
 
   it('force: true면 캐시가 있어도 무시하고 다시 분석한다(hasKeywords조차 확인하지 않는다)', async () => {

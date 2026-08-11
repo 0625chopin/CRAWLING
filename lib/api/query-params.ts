@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { posTagSchema, type PosTag } from '@/lib/types/keyword'
 import { pressCategorySchema, type PressCategory } from '@/lib/types/press'
 
 /**
@@ -31,3 +32,29 @@ export function readCategoryParams(searchParams: URLSearchParams): string[] | un
   const values = searchParams.getAll('category')
   return values.length > 0 ? values : undefined
 }
+
+/**
+ * `pos`는 쉼표로 구분한 복수 값을 받는다(`?pos=NNG,NNP`) — 조건 바가 `ToggleGroup
+ * type="multiple"`로 여러 품사를 동시에 켤 수 있어야 한다(docs/screens/03-hot-keyword.md
+ * §① 조건 바 와이어프레임 "품사 [x NNG][x NNP][ SL ]").
+ *
+ * `GET /api/runs/{runId}/keywords`와 `GET /api/keywords/daily`가 같은 규칙을 쓰므로
+ * `categoryQuerySchema`와 같은 이유로 여기 한 곳에 둔다 — 라우트마다 다시 짜면 허용 품사가
+ * 늘었을 때 한쪽만 바뀐다.
+ */
+export const posQuerySchema = z
+  .string()
+  .min(1, 'pos 값을 확인하세요')
+  .transform((value) => [
+    ...new Set(
+      value
+        .split(',')
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0)
+    ),
+  ])
+  .refine(
+    (values) => values.length > 0 && values.every((value) => posTagSchema.safeParse(value).success),
+    { message: `pos는 ${posTagSchema.options.join(', ')} 중에서 쉼표로 구분해 입력하세요` }
+  )
+  .transform((values) => values as PosTag[])

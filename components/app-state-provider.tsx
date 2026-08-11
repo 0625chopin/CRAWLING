@@ -12,7 +12,7 @@ import {
 } from 'react'
 
 import type { PressSourceWithUrl } from '@/lib/api/press-client'
-import type { KeywordsResult } from '@/lib/api/keyword-client'
+import type { DailyKeywordsResult } from '@/lib/api/keyword-client'
 import type { RunListItem, RunSummary } from '@/lib/api/run-client'
 import type { PosTag } from '@/lib/types/keyword'
 import type { PressCategory } from '@/lib/types/press'
@@ -138,13 +138,16 @@ export const useResultsTabStateRaw = resultsTabStore.useTabState
 
 export interface KeywordsTabState {
   runs: RunListItem[] | null
-  selectedRunId: string | null
+  /** `YYYYMMDD`. 분석 단위가 run이 아니라 날짜다(`analysis-filter-bar.tsx` 주석 참고). */
+  selectedDate: string | null
+  /** 고른 시간대 구간 번호(0~7). null이면 전체 시간대다. */
+  slot: number | null
   minCount: number
   posFilter: PosTag[]
   topN: number
   categories: PressCategory[]
   analysisStatus: 'idle' | 'loading' | 'success' | 'error'
-  result: KeywordsResult | null
+  result: DailyKeywordsResult | null
 }
 
 /** 분석 조건 바의 "필터 초기화"가 되돌리는 기본값이자, 이 탭의 초기 상태이기도 하다. */
@@ -152,11 +155,14 @@ export const KEYWORDS_FILTER_DEFAULTS = {
   minCount: 1,
   posFilter: ['NNG', 'NNP', 'SL'] as PosTag[],
   topN: 50,
+  /** 처음에는 전체 시간대를 본다 — 구간을 먼저 고르게 하면 하루 전체 그림을 볼 방법이 없다. */
+  slot: null as number | null,
 }
 
 const KEYWORDS_TAB_DEFAULT: KeywordsTabState = {
   runs: null,
-  selectedRunId: null,
+  selectedDate: null,
+  slot: KEYWORDS_FILTER_DEFAULTS.slot,
   minCount: KEYWORDS_FILTER_DEFAULTS.minCount,
   posFilter: KEYWORDS_FILTER_DEFAULTS.posFilter,
   topN: KEYWORDS_FILTER_DEFAULTS.topN,

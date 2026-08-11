@@ -1,41 +1,17 @@
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 
-import { categoryQuerySchema, readCategoryParams } from '@/lib/api/query-params'
+import { categoryQuerySchema, posQuerySchema, readCategoryParams } from '@/lib/api/query-params'
 import { fail, fieldErrorsFromZod, ok, withErrorBoundary } from '@/lib/api/response'
 import { analyzeRun } from '@/lib/keyword/analyze-run'
 import { buildKeywordsResponseBody } from '@/lib/keyword/keywords-response'
 import { UnsafePathSegmentError } from '@/lib/storage/paths'
 import { RunNotFoundError } from '@/lib/storage/run-repository'
-import { posTagSchema, type PosTag } from '@/lib/types/keyword'
 
 // Node.js 런타임이 이미 기본값이므로 runtime export를 두지 않는다(docs/CONVENTIONS.md §6).
 // 이 프로젝트에는 실행 시간 상한이 없으므로 maxDuration도 선언하지 않는다(ROADMAP Task 021
 // 구현 규칙 — 최초 분석은 Kiwi build() 1.4초를 포함해도 기사 200건 기준 3~4초 수준이라
 // 요청 하나 안에서 끝내도 된다. 진행 상태를 따로 폴링할 필요가 없다).
-
-/**
- * `pos`는 쉼표로 구분한 복수 값을 받는다(`?pos=NNG,NNP`) — 조건 바가 `ToggleGroup
- * type="multiple"`로 여러 품사를 동시에 켤 수 있어야 한다(docs/screens/03-hot-keyword.md
- * §① 조건 바 와이어프레임 "품사 [x NNG][x NNP][ SL ]"). Task 022A가 조건 바를 구현할 때
- * 그대로 이 형식으로 호출한다(결정 초안: docs/DECISIONS.draft.저장소계층.md).
- */
-const posListSchema = z
-  .string()
-  .min(1, 'pos 값을 확인하세요')
-  .transform((value) => [
-    ...new Set(
-      value
-        .split(',')
-        .map((token) => token.trim())
-        .filter((token) => token.length > 0)
-    ),
-  ])
-  .refine(
-    (values) => values.length > 0 && values.every((value) => posTagSchema.safeParse(value).success),
-    { message: `pos는 ${posTagSchema.options.join(', ')} 중에서 쉼표로 구분해 입력하세요` }
-  )
-  .transform((values) => values as PosTag[])
 
 const keywordsQuerySchema = z.object({
   minCount: z.coerce
@@ -43,7 +19,7 @@ const keywordsQuerySchema = z.object({
     .int('최소 등장 횟수는 정수여야 합니다')
     .positive('최소 등장 횟수는 1 이상이어야 합니다')
     .optional(),
-  pos: posListSchema.optional(),
+  pos: posQuerySchema.optional(),
   topN: z.coerce
     .number('표시 개수는 숫자여야 합니다')
     .int('표시 개수는 정수여야 합니다')

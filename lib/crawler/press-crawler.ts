@@ -65,7 +65,12 @@ export interface PressCrawlResult {
   skipped: string[]
 }
 
-type ArticleLink = { url: string; title?: string }
+/**
+ * `publishedAt`은 피드가 준 발행 시각(`FeedItem.publishedAt`)을 원문 수집 경로까지 실어 나르는
+ * 통로다. HTML 목록 수집 경로에는 이 값을 알 방법이 없어 항상 undefined이며, 그 사실은 기사에
+ * 그대로 남는다(`Article.publishedAt` 주석 — 미상을 임의의 시각으로 채우지 않는다).
+ */
+type ArticleLink = { url: string; title?: string; publishedAt?: string }
 
 /**
  * 링크 1건의 처리 결과. **"실패"와 "요청하지 않음"을 타입으로 가른다** — 두 가지를 같은
@@ -127,6 +132,7 @@ async function collectArticlePage(
       content: check.content,
       contentSource: 'article-page',
       crawledAt: new Date().toISOString(),
+      publishedAt: link.publishedAt,
       category,
     },
   }
@@ -233,6 +239,7 @@ function collectRssSummaries(
           content: check.content,
           contentSource: 'rss-summary',
           crawledAt: new Date().toISOString(),
+          publishedAt: item.publishedAt,
           category,
         })
       }
@@ -283,7 +290,11 @@ async function crawlRssPress(
   const target = items.length
   missingLinkFailures.forEach((_, index) => hooks.onArticleDone?.(press.id, index + 1, target))
 
-  const links = linkedItems.map((item) => ({ url: item.link, title: item.title }))
+  const links = linkedItems.map((item) => ({
+    url: item.link,
+    title: item.title,
+    publishedAt: item.publishedAt,
+  }))
   const offsetHooks: PressCrawlHooks = {
     onArticleDone: (pressId, collected) =>
       hooks.onArticleDone?.(pressId, missingLinkFailures.length + collected, target),

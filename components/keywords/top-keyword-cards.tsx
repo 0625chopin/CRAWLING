@@ -1,11 +1,14 @@
+import { KeywordDelta } from '@/components/keywords/keyword-delta'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import type { KeywordCount } from '@/lib/types/keyword'
+import type { DailyKeywordItem } from '@/lib/api/keyword-client'
 
 export interface TopKeywordCardsProps {
   /** 상위 5개(페이지가 이미 정렬·슬라이스해서 넘긴다). rank·ratio는 이 컴포넌트가 계산한다
    *  (D-037 — API가 rank·ratio를 채우지 않는다, ratio 분모는 items[0].count). */
-  items: KeywordCount[]
+  items: DailyKeywordItem[]
+  /** 비교 대상 구간이 없으면(전체 시간대·첫 구간) null — 증감 줄을 그리지 않는다. */
+  hasPreviousSlot: boolean
 }
 
 // 순위별 강조선 — 1위(진함) → 5위(옅음). --chart-*는 라이트/다크가 같은 고정값이라 다크에서
@@ -35,7 +38,7 @@ const TOP_RANK_TEXT_CLASS: Record<number, string> = {
  * 넘어온다). ratio는 이 카드에서는 화면에 쓰지 않지만 D-037이 못 박은 분모(items[0].count)를
  * 그대로 지켜 랭킹 표·카드 리스트와 계산 방식을 통일한다.
  */
-export function TopKeywordCards({ items }: TopKeywordCardsProps) {
+export function TopKeywordCards({ items, hasPreviousSlot }: TopKeywordCardsProps) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       {items.map((item, index) => {
@@ -51,7 +54,12 @@ export function TopKeywordCards({ items }: TopKeywordCardsProps) {
                 {item.keyword}
               </span>
               <Badge variant="outline">{item.posTag}</Badge>
-              <span className="text-sm tabular-nums text-muted-foreground">{item.count}회</span>
+              <span className="text-sm tabular-nums text-muted-foreground">{item.count}건</span>
+              {hasPreviousSlot && (
+                <span className="text-xs">
+                  <KeywordDelta previousCount={item.previousCount} delta={item.delta} />
+                </span>
+              )}
             </CardContent>
           </Card>
         )

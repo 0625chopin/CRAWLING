@@ -88,3 +88,83 @@ export async function fetchKeywords(
   const response = await fetch(`/api/runs/${runId}/keywords${query ? `?${query}` : ''}`)
   return unwrap<KeywordsResult>(response)
 }
+
+/**
+ * 시간대별 랭킹 1행. `count`는 **언급 기사 수**다 — 본문에 나온 총 등장 횟수가 아니다
+ * (`lib/keyword/aggregate.ts`가 기준을 바꾼 이유가 그 주석에 있다).
+ */
+export interface DailyKeywordItem {
+  keyword: string
+  posTag: PosTag
+  count: number
+  /**
+   * 직전 시간대의 언급 기사 수. **비교할 구간이 없으면 null**이다(전체 시간대를 보고 있거나
+   * 하루의 첫 구간 0~3시). 0(직전 구간에 한 건도 없었음 = 새로 뜬 키워드)과 구분해야 한다.
+   */
+  previousCount: number | null
+  /** `count - previousCount`. previousCount가 null이면 null. */
+  delta: number | null
+}
+
+/** `GET /api/keywords/daily` 응답 몸통(app/api/keywords/daily/route.ts와 같은 모양). */
+export interface DailyKeywordsResult {
+  /** `YYYYMMDD`. */
+  date: string
+  builtAt: string
+  /** 고른 시간대 구간 번호. null이면 전체 시간대다. */
+  slot: number | null
+  /** 비교 대상 구간 번호. 전체 시간대이거나 첫 구간(0~3시)이면 null이다. */
+  previousSlot: number | null
+  /** 이 날짜에 합산한 실행 수. */
+  runCount: number
+  summary: AnalysisSummary
+  items: DailyKeywordItem[]
+  /** 필터 적용 전 이 구간의 전체 키워드 수. */
+  totalItemCount: number
+  /** 구간별 기사 수(8개, 카테고리 필터 반영). 시간대 셀렉터가 "이 구간에 몇 건"을 보여준다. */
+  slotArticleCounts: number[]
+  /** 발행 시각을 몰라 어느 구간에도 넣지 못한 기사 수. 시간대를 고르면 이 기사들은 빠진다. */
+  unknownTimeCount: number
+  /**
+   * 발행 **날짜**가 이 날짜와 달라 구간에 넣지 않은 기사 수. RSS 피드에는 전날 이전 기사도
+   * 섞여 오는데, 시(hour)만 보고 구간에 넣으면 어제 14시 기사가 오늘의 13~15시 집계에 들어간다.
+   */
+  otherDateCount: number
+  /** 카테고리 필터 때문에 제외된 "카테고리 미상" 기사 수(필터가 없으면 0). */
+  uncategorizedCount: number
+  /** 이 날짜 전체(모든 구간) 기사 수. 카테고리 필터는 반영된다. */
+  totalArticleCount: number
+  /** 이번 호출에서 읽기에 실패해 건너뛴 기사 수. 캐시를 그대로 썼으면 0이다. */
+  skippedArticleCount: number
+  /** **이 날짜에 수집된 기사가 아예 없을 때만** 채워진다. */
+  message?: string
+}
+
+export interface FetchDailyKeywordsOptions extends FetchKeywordsOptions {
+  /** 구간 번호(0~7). 생략하면 전체 시간대다. */
+  slot?: number | null
+}
+
+/**
+ * 날짜 하루치를 시간대 구간별로 조회한다. 그날 실행한 run을 전부 합치고 기사 URL로 중복을
+ * 제거한 뒤 발행 시각으로 자른 결과다.
+ *
+ * **처음 부르는 날짜는 서버가 그 자리에서 하루치를 분석하므로 수십 초가 걸릴 수 있다.** 이후
+ * 호출은 캐시 위에서 새로 늘어난 run만 반영한다. `force`는 불용어를 바꾼 뒤처럼 캐시를 통째로
+ * 다시 만들어야 할 때만 쓴다.
+ */
+export async function fetchDailyKeywords(
+  date: string,
+  options: FetchDailyKeywordsOptions = {}
+): Promise<DailyKeywordsResult> {
+  const params = new URLSearchParams({ date })
+  if (options.slot !== undefined && options.slot !== null) params.set('slot', String(options.slot))
+  if (options.minCount !== undefined) params.set('minCount', String(options.minCount))
+  if (options.pos && options.pos.length > 0) params.set('pos', options.pos.join(','))
+  if (options.topN !== undefined) params.set('topN', String(options.topN))
+  if (options.force) params.set('force', 'true')
+  for (const category of options.categories ?? []) params.append('category', category)
+
+  const response = await fetch(`/api/keywords/daily?${params.toString()}`)
+  return unwrap<DailyKeywordsResult>(response)
+}

@@ -5,6 +5,7 @@ import { Search } from 'lucide-react'
 
 import { CategoryFilter } from '@/components/common/category-filter'
 import { ErrorAlert } from '@/components/common/error-alert'
+import { HighlightedText } from '@/components/results/highlighted-text'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -33,6 +34,11 @@ export interface ArticleFileListProps {
   /** 카테고리 필터(Task 028). 빈 배열이면 전체 — GET .../articles의 category 쿼리와 같은 규칙. */
   categories: PressCategory[]
   onCategoriesChange: (categories: PressCategory[]) => void
+  /** 검색 Input의 현재 값(디바운스 전). article-preview.tsx가 제목·본문 하이라이트에도 같은
+   * 값을 써야 해서(Task 029) 이 컴포넌트 안에 가두지 않고 page.tsx가 selectedArticleId·
+   * categories와 같은 방식으로 쥔다(D-006 패턴). */
+  query: string
+  onQueryChange: (query: string) => void
 }
 
 type LoadState = 'loading' | 'error' | 'ready'
@@ -58,8 +64,9 @@ export function ArticleFileList({
   onSelectArticleId,
   categories,
   onCategoriesChange,
+  query,
+  onQueryChange,
 }: ArticleFileListProps) {
-  const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [loadState, setLoadState] = useState<LoadState>('loading')
   const [items, setItems] = useState<ArticleFileEntry[]>([])
@@ -71,13 +78,13 @@ export function ArticleFileList({
     FETCH_KEY_UNSET
   )
 
-  // 실행(run)을 전환하면 이전 실행에 대한 검색어가 새 실행 화면에 남지 않도록 렌더 도중 즉시
-  // 비운다. useEffect 본문에서 무조건 setState를 부르면 react-hooks/set-state-in-effect 경고가
-  // 발생해, app/results/page.tsx·hooks/use-crawl-progress.ts와 같은 "prop이 바뀔 때 state를
-  // 조정하는" 렌더 중 처리 패턴을 쓴다.
+  // 실행(run)을 전환하면 이전 실행에 대한 디바운스된 검색어가 새 실행 화면에 남지 않도록 렌더
+  // 도중 즉시 비운다(실제 query 값은 page.tsx가 selectedArticleId·categories와 함께 초기화한다).
+  // useEffect 본문에서 무조건 setState를 부르면 react-hooks/set-state-in-effect 경고가 발생해,
+  // app/results/page.tsx·hooks/use-crawl-progress.ts와 같은 "prop이 바뀔 때 state를 조정하는"
+  // 렌더 중 처리 패턴을 쓴다.
   if (runId !== trackedRunId) {
     setTrackedRunId(runId)
-    setQuery('')
     setDebouncedQuery('')
   }
 
@@ -145,7 +152,7 @@ export function ArticleFileList({
             placeholder="파일명 · 제목 검색"
             className="pl-8"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => onQueryChange(event.target.value)}
           />
         </div>
 
@@ -194,90 +201,109 @@ export function ArticleFileList({
 
         {loadState === 'ready' && items.length > 0 && (
           <>
-            {/* 데스크톱: 표 형태 (lg 이상) */}
-            <ScrollArea className="hidden max-h-[28rem] lg:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>파일명</TableHead>
-                    <TableHead>언론사</TableHead>
-                    <TableHead>제목</TableHead>
-                    <TableHead>수집 시각</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+            {/* 데스크톱: 표 형태 (lg 이상).
+                ScrollArea에 max-h만 주면 스크롤이 안 된다(Task 029에서 실측 확인) — 내부
+                Viewport가 size-full(h-full)인데 부모가 max-height뿐이면 퍼센트 높이가 auto로
+                풀려 내용만큼 자라 버린다. flex-1(flex-basis 0%)로 감싸 봐도 Root 자체는
+                flex 계산으로 정확한 높이를 받지만, 그 안의 Viewport가 h-full을 실제로
+                픽셀값으로 resolve하지 못하는 브라우저 동작을 실측으로 확인했다(2280px 그대로
+                노출) — flex의 이 구간은 스펙상으로도 구현별로 갈리는 지점이다. grid의
+                `minmax(0,1fr)` 트랙은 이 정의(definite) 전달이 훨씬 안정적이라 grid로
+                바꾼다. `min-h-0`이 없으면 grid item의 기본 최소 크기(auto=내용 크기)가
+                트랙을 다시 내용만큼 밀어 올린다 — 항목이 적으면 트랙이 내용만큼만 자라 빈
+                공간이 남지 않고, 넘치면 이 높이(28rem)에서 스크롤된다. */}
+            <div className="hidden max-h-[28rem] grid-rows-[minmax(0,1fr)] lg:grid">
+              <ScrollArea className="min-h-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>파일명</TableHead>
+                      <TableHead>언론사</TableHead>
+                      <TableHead>제목</TableHead>
+                      <TableHead>수집 시각</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((article) => {
+                      const isSelected = article.id === selectedArticleId
+                      return (
+                        <TableRow
+                          key={article.id}
+                          tabIndex={0}
+                          aria-selected={isSelected}
+                          className={cn('cursor-pointer', isSelected && 'bg-muted')}
+                          onClick={() => select(article.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              select(article.id)
+                            }
+                          }}
+                        >
+                          <TableCell className="font-mono text-xs">
+                            {article.fileName}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={article.pressDeleted ? 'outline' : 'secondary'}>
+                              {article.pressDeleted ? '삭제된 언론사' : article.pressName}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-48 truncate">
+                            <HighlightedText text={article.title} query={query} />
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {formatLocalTimeOnly(article.crawledAt)}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </div>
+
+            {/* 모바일: 카드 리스트 (lg 미만). 스크롤 확정 이유는 위 데스크톱 블록 주석 참고 —
+                여기서는 lg 이상에서 숨기는 방향(lg:hidden)으로 표시 조건만 뒤집는다. */}
+            <div className="grid max-h-[28rem] grid-rows-[minmax(0,1fr)] lg:hidden">
+              <ScrollArea className="min-h-0">
+                <ul
+                  role="listbox"
+                  aria-label="수집된 기사 파일 목록"
+                  className="space-y-2"
+                >
                   {items.map((article) => {
                     const isSelected = article.id === selectedArticleId
                     return (
-                      <TableRow
-                        key={article.id}
-                        tabIndex={0}
-                        aria-selected={isSelected}
-                        className={cn('cursor-pointer', isSelected && 'bg-muted')}
-                        onClick={() => select(article.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault()
-                            select(article.id)
-                          }
-                        }}
-                      >
-                        <TableCell className="font-mono text-xs">
-                          {article.fileName}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={article.pressDeleted ? 'outline' : 'secondary'}>
-                            {article.pressDeleted ? '삭제된 언론사' : article.pressName}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="max-w-48 truncate">{article.title}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatLocalTimeOnly(article.crawledAt)}
-                        </TableCell>
-                      </TableRow>
+                      <li key={article.id} role="option" aria-selected={isSelected}>
+                        <button
+                          type="button"
+                          onClick={() => select(article.id)}
+                          className={cn(
+                            'w-full rounded-lg border p-3 text-left text-sm',
+                            isSelected && 'bg-muted'
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-xs text-muted-foreground">
+                              {article.fileName}
+                            </span>
+                            <Badge variant={article.pressDeleted ? 'outline' : 'secondary'}>
+                              {article.pressDeleted ? '삭제된 언론사' : article.pressName}
+                            </Badge>
+                          </div>
+                          <p className="mt-1 truncate font-medium">
+                            <HighlightedText text={article.title} query={query} />
+                          </p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {formatLocalTimeOnly(article.crawledAt)}
+                          </p>
+                        </button>
+                      </li>
                     )
                   })}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-
-            {/* 모바일: 카드 리스트 (lg 미만) */}
-            <ScrollArea className="max-h-[28rem] lg:hidden">
-              <ul
-                role="listbox"
-                aria-label="수집된 기사 파일 목록"
-                className="space-y-2"
-              >
-                {items.map((article) => {
-                  const isSelected = article.id === selectedArticleId
-                  return (
-                    <li key={article.id} role="option" aria-selected={isSelected}>
-                      <button
-                        type="button"
-                        onClick={() => select(article.id)}
-                        className={cn(
-                          'w-full rounded-lg border p-3 text-left text-sm',
-                          isSelected && 'bg-muted'
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-xs text-muted-foreground">
-                            {article.fileName}
-                          </span>
-                          <Badge variant={article.pressDeleted ? 'outline' : 'secondary'}>
-                            {article.pressDeleted ? '삭제된 언론사' : article.pressName}
-                          </Badge>
-                        </div>
-                        <p className="mt-1 truncate font-medium">{article.title}</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {formatLocalTimeOnly(article.crawledAt)}
-                        </p>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            </ScrollArea>
+                </ul>
+              </ScrollArea>
+            </div>
           </>
         )}
       </CardContent>

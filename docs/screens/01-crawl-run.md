@@ -68,6 +68,25 @@
 이 변경은 `press-select-card.tsx`·`crawl-run-panel.tsx`·`press-run-status-list.tsx`·`app/page.tsx`에만
 영향을 주고, 크롤링 시작 요청(`crawlStartRequestSchema`)이나 진행 상태 폴링 응답 스키마는 바뀌지 않았다.
 
+### 카테고리 헤더 sticky 처리 (22일차 후속, Task 030 교차검증 발견)
+
+`docs/ROADMAP.md`에 없는 신규 요청(사용자 "정확한 분석을 위해 언론사를 많이 추가해줬으면 좋겠다")이 언론사
+표본을 17→34곳으로 늘리면서(Task 030) 이 화면의 가정이 깨졌다. 스포츠(7)·IT/AI(8)처럼 카테고리 그룹 하나가
+`ScrollArea`의 뷰포트(`h-[320px] sm:h-[420px]`)보다 커지자, 위 카테고리 헤더가 스크롤에 그냥 흘러가 버려
+지금 보고 있는 항목이 어느 카테고리인지 알 수 없는 상황이 실제로 발생했다(17곳일 때는 그룹이 작아 거의
+드러나지 않던 문제). Task 030 교차검증(화면 워크스트림) 중 Playwright로 재현·발견해, 같은 회차에 바로
+고쳤다.
+
+- `components/crawl/press-select-card.tsx`의 카테고리 헤더(체크박스 + 라벨)에 `sticky top-0 z-10`을
+  준다. Radix `ScrollArea`의 Viewport가 실제 스크롤 컨테이너라 그 안에서 `sticky`가 그대로 성립한다.
+- **배경은 반드시 채운다** — `bg-card`(하드코딩 색상 아님, `Card`가 쓰는 배경 토큰과 동일). 배경이
+  투명하면 아래로 스크롤되는 언론사 항목들이 헤더 글자와 겹쳐 보인다.
+- 그룹이 연달아 스크롤되면 이전 그룹의 헤더가 자기 그룹의 영역을 벗어나는 순간 다음 그룹의 헤더가
+  자연스럽게 그 자리를 이어받는다(각 헤더가 자기 카테고리 `div`에 속한 `sticky` 요소라 별도 로직 없이
+  성립한다).
+- 헤더가 고정된 뒤에도 카테고리 전체 선택 체크박스는 그대로 클릭된다(Playwright로 sticky 상태에서 클릭 →
+  해당 카테고리 전원 선택 확인).
+
 ---
 
 ## 와이어프레임 — 데스크톱 (≥1024px)
@@ -161,6 +180,7 @@
 | 전체 해제 | `Button` (`variant="outline" size="sm"`) | — | 선택 0개면 `disabled` |
 | 구분선 | `Separator` | `my-2` | 요약 바와 목록 사이 |
 | 목록 컨테이너 | `ScrollArea` | `h-[420px] pr-3` (모바일 `h-[320px]`) | 내부 `<ul role="group">` |
+| 카테고리 헤더 | `Checkbox` + `Label`(그룹 전체 선택) | `sticky top-0 z-10 bg-card` | Task 030 후속(22일차) — 그룹이 뷰포트보다 크면 스크롤 중에도 상단에 고정된다. 근거는 위 "카테고리 헤더 sticky 처리" 절 |
 | 언론사 1건 | `Checkbox` + `Label`(`htmlFor`로 감싸는 큰 클릭 영역) + `Badge` | `flex items-center justify-between gap-3 rounded-lg px-2.5 py-2 hover:bg-muted` | 이름 `text-sm font-medium`, URL `font-mono text-xs text-muted-foreground`, 활성 배지 `Badge variant="secondary"` |
 | ④ 카드 | `Card` | `lg:sticky lg:top-20` | 앱 셸 헤더(`h-14`) + 여백 고려한 sticky 오프셋 |
 | ③ 크롤링 옵션 | `Label` + `Input type="number"` | `Input` `w-24`, 보조문구 `text-xs text-muted-foreground` | `Settings2` 아이콘을 라벨 앞에 |

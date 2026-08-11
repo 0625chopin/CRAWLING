@@ -157,8 +157,15 @@ export function PressSelectCard({
 
                   return (
                     <div key={category} className="space-y-1">
-                      {/* 카테고리 헤더 — 전체 선택 체크박스와 같은 3단 상태를 쓴다(Task 028). */}
-                      <div className="flex items-center gap-2 px-1">
+                      {/* 카테고리 헤더 — 전체 선택 체크박스와 같은 3단 상태를 쓴다(Task 028).
+                          Task 030으로 언론사가 17→34곳이 되며 스포츠(7)·IT/AI(8)처럼 뷰포트
+                          (320~420px)보다 큰 그룹이 생겨, 헤더가 스크롤에 그냥 흘러가면 지금
+                          보는 항목이 어느 카테고리인지 알 수 없어졌다(Task 030 교차검증 발견,
+                          22일차). `sticky top-0`으로 고정하고 `bg-card`로 배경을 채운다 —
+                          Radix ScrollArea의 Viewport가 실제 스크롤 컨테이너라 그 안에서
+                          sticky가 그대로 성립한다. 배경이 없으면 아래로 스크롤되는 항목들이
+                          헤더 글자와 겹쳐 보인다. */}
+                      <div className="sticky top-0 z-10 flex items-center gap-2 bg-card px-1 py-1.5">
                         <Checkbox
                           id={`press-category-${category}`}
                           checked={groupChecked}

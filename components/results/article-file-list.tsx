@@ -10,7 +10,6 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -202,18 +201,17 @@ export function ArticleFileList({
         {loadState === 'ready' && items.length > 0 && (
           <>
             {/* 데스크톱: 표 형태 (lg 이상).
-                ScrollArea에 max-h만 주면 스크롤이 안 된다(Task 029에서 실측 확인) — 내부
-                Viewport가 size-full(h-full)인데 부모가 max-height뿐이면 퍼센트 높이가 auto로
-                풀려 내용만큼 자라 버린다. flex-1(flex-basis 0%)로 감싸 봐도 Root 자체는
-                flex 계산으로 정확한 높이를 받지만, 그 안의 Viewport가 h-full을 실제로
-                픽셀값으로 resolve하지 못하는 브라우저 동작을 실측으로 확인했다(2280px 그대로
-                노출) — flex의 이 구간은 스펙상으로도 구현별로 갈리는 지점이다. grid의
-                `minmax(0,1fr)` 트랙은 이 정의(definite) 전달이 훨씬 안정적이라 grid로
-                바꾼다. `min-h-0`이 없으면 grid item의 기본 최소 크기(auto=내용 크기)가
-                트랙을 다시 내용만큼 밀어 올린다 — 항목이 적으면 트랙이 내용만큼만 자라 빈
-                공간이 남지 않고, 넘치면 이 높이(28rem)에서 스크롤된다. */}
-            <div className="hidden max-h-[28rem] grid-rows-[minmax(0,1fr)] lg:grid">
-              <ScrollArea className="min-h-0">
+                **목록에 자체 스크롤을 두지 않는다.** 22일차에 고정 높이 + 내부 ScrollArea로
+                만들었다가 실사용에서 더 나쁜 함정이 드러났다(I-059): 이 카드는 실행 선택·요약
+                카드 아래에 놓여 화면 최상단에서 677px 지점에서 시작하는데, 창 높이가 900px이면
+                목록 스크롤 영역이 61px만 보인다. 그 상태에서 휠을 굴리면 **페이지가 아니라 안쪽
+                목록이 먼저 스크롤된다** — 기사 500건이면 안쪽 콘텐츠가 19,000px이라 그걸 다 지나야
+                페이지가 움직인다. 사용자 입장에서는 "스크롤이 안 내려가서 아래 파일을 클릭할 수
+                없다"가 된다. 중첩 스크롤 컨테이너를 없애 페이지 스크롤 하나만 남기는 것이
+                유일하게 안정적인 해법이다. 오른쪽 미리보기는 `lg:sticky`로 따라오므로 목록이
+                길어져도 계속 보인다. */}
+            <div className="hidden lg:block">
+              <div>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -259,13 +257,14 @@ export function ArticleFileList({
                     })}
                   </TableBody>
                 </Table>
-              </ScrollArea>
+              </div>
             </div>
 
-            {/* 모바일: 카드 리스트 (lg 미만). 스크롤 확정 이유는 위 데스크톱 블록 주석 참고 —
-                여기서는 lg 이상에서 숨기는 방향(lg:hidden)으로 표시 조건만 뒤집는다. */}
-            <div className="grid max-h-[28rem] grid-rows-[minmax(0,1fr)] lg:hidden">
-              <ScrollArea className="min-h-0">
+            {/* 모바일: 카드 리스트 (lg 미만). 자체 스크롤을 두지 않는 이유는 위 데스크톱 블록
+                주석 참고(I-059) — 모바일은 화면이 더 좁아 목록이 화면 밖에서 시작할 여지가 크므로
+                같은 함정이 더 쉽게 재현된다. */}
+            <div className="lg:hidden">
+              <div>
                 <ul
                   role="listbox"
                   aria-label="수집된 기사 파일 목록"
@@ -302,7 +301,7 @@ export function ArticleFileList({
                     )
                   })}
                 </ul>
-              </ScrollArea>
+              </div>
             </div>
           </>
         )}

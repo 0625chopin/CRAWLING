@@ -143,7 +143,11 @@ export function ArticlePreview({ runId, articleId, query }: ArticlePreviewProps)
   if (!article) return null
 
   return (
-    <Card>
+    // 기사 목록이 자체 스크롤을 버리고 페이지 스크롤을 쓰게 되면서(I-059) 목록이 매우 길어질 수
+    // 있다 — 기사 500건이면 수천 픽셀이다. 미리보기가 함께 흘러가 버리면 아래쪽 파일을 고른 뒤
+    // 본문을 보려고 다시 위로 올라가야 한다. sticky로 붙여 목록을 훑는 동안 계속 보이게 한다
+    // (crawl-run-panel.tsx가 같은 이유로 쓰는 lg:sticky lg:top-20과 같은 관용구).
+    <Card className="lg:sticky lg:top-20">
       <CardHeader>
         <CardTitle className="text-base leading-snug font-medium">
           <HighlightedText text={article.title} query={query} />
